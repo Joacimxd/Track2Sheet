@@ -1,0 +1,5 @@
+first I research about the architecture and thought about splitting the tracks and converting into music seet
+then I reseached about state of the art models that could split songs 
+found about demucs and BS roformer sw, compare them with don's stop believing and BS won, it sounded better
+then I started the music sheet part and thought converting into midi first was the standard
+I reserched for the best wav2midi models 

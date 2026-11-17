@@ -1,0 +1,19 @@
+services:
+  jupyter:
+    build:
+      context: .
+      args:
+        HOST_UID: ${HOST_UID:-1000}
+        HOST_GID: ${HOST_GID:-1000}
+    image: track2sheet
+    env_file: .env
+    environment:
+      JUPYTER_TOKEN: ${JUPYTER_TOKEN}
+    ports:
+      - "127.0.0.1:${JUPYTER_PORT:-8888}:8888"
+    volumes:
+      - .:/workspace
+    shm_size: 2gb
+    # Use Docker's default bridge instead of a per-project network (on some hosts the
+    # firewall only lets the default bridge reach the internet).
+    network_mode: bridge

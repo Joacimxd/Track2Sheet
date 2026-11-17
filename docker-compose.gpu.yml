@@ -1,0 +1,11 @@
+# GPU override: needs an NVIDIA GPU + nvidia-container-toolkit on the host.
+# Enable it in .env with: COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml
+services:
+  jupyter:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

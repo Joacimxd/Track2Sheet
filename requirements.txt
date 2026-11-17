@@ -1,0 +1,5 @@
+yt-dlp[default,deno] @ git+https://github.com/yt-dlp/yt-dlp.git
+audio-separator[gpu]
+python-dotenv
+jupyterlab
+ipywidgets
