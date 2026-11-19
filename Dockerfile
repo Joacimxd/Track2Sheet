@@ -12,9 +12,12 @@ RUN pip install --no-cache-dir -r /tmp/requirements.txt
 RUN pip install --no-cache-dir audioread
 
 # Run as a normal user with the host's uid/gid so files in output/ belong to you.
+# On macOS HOST_GID is often 20 (staff), which already exists as dialout in Debian.
 ARG HOST_UID=1000
 ARG HOST_GID=1000
-RUN groupadd -g ${HOST_GID} app && useradd -m -u ${HOST_UID} -g ${HOST_GID} app
+RUN existing="$(getent group "${HOST_GID}" | cut -d: -f1)"; \
+    if [ -z "$existing" ]; then groupadd -g "${HOST_GID}" app; existing=app; fi; \
+    useradd -m -u "${HOST_UID}" -g "$existing" -o app
 USER app
 
 # The project folder is mounted here by docker-compose (notebooks, output, models, .env).
