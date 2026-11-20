@@ -1,0 +1,61 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: 'Rajdhani', ui-sans-serif, system-ui, sans-serif;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background:
+    radial-gradient(ellipse at 50% 0%, rgba(56, 214, 255, 0.08), transparent 60%),
+    #050912;
+  color: #e2e8f0;
+  font-family: var(--font-sans);
+}
+
+@layer components {
+  .panel {
+    border-radius: 14px;
+    border: 1.5px solid rgba(56, 189, 248, 0.45);
+    background: linear-gradient(180deg, rgba(16, 29, 48, 0.96), rgba(10, 19, 33, 0.96));
+    box-shadow:
+      0 0 14px rgba(56, 214, 255, 0.18),
+      inset 0 0 24px rgba(56, 214, 255, 0.05);
+  }
+}
+
+.stage-beam {
+  background: linear-gradient(180deg, rgba(150, 200, 255, 0.35), rgba(150, 200, 255, 0) 85%);
+  clip-path: polygon(42% 0, 58% 0, 100% 100%, 0 100%);
+  filter: blur(6px);
+  transform-origin: 50% 0;
+  animation: sway ease-in-out infinite alternate;
+  mix-blend-mode: screen;
+}
+
+@keyframes sway {
+  from {
+    transform: rotate(-14deg);
+    opacity: 0.55;
+  }
+  to {
+    transform: rotate(14deg);
+    opacity: 0.9;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stage-beam {
+    animation: none;
+  }
+}

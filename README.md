@@ -1,7 +1,8 @@
 # Track2Sheet
 
 Download a song from YouTube and split it into 6 stems (vocals, drums, bass, guitar, piano,
-other) with **BS-RoFormer SW**, all from one Jupyter notebook running in Docker.
+other) with **BS-RoFormer SW**, all from one Jupyter notebook running in Docker. A web interface
+(`interfaz/`) lets you practise guitar or drums over the separated stems.
 
 ## Project layout
 
@@ -13,11 +14,15 @@ docker-compose.gpu.yml  optional NVIDIA GPU override
 requirements.txt
 notebooks/
   track2stems.ipynb     1. download  2. separate into stems
-docs/process.txt        research notes
+docs/
+  process.txt           research notes
+  boceto_interfaz.jpeg  UI mockup for the web interface
+interfaz/               web interface (Vite + React + TypeScript), see interfaz/README.md
 models/                 separation model cache (downloaded on first run, ~700 MB)
 output/
   downloads/<song>.wav
   stems/<song>/<stem>.wav
+  midi/<song>/{guitar,drums}.mid   transcriptions read by the interface
 ```
 
 ## Run
@@ -28,6 +33,16 @@ docker compose up --build
 ```
 
 Open `http://localhost:8888/?token=<JUPYTER_TOKEN>`. The notebook opens automatically.
+
+## Web interface
+
+```bash
+cd interfaz
+npm install
+npm run dev                   # http://localhost:5173
+```
+
+It reads the songs in `output/` (plus a built-in demo). Details in [interfaz/README.md](interfaz/README.md).
 
 ## GPU (NVIDIA)
 
