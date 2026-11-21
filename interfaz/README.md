@@ -1,82 +1,79 @@
 # Track2Sheet — Interfaz
 
-Interfaz web (Vite + React + TypeScript + Tailwind CSS + Lucide) para practicar las pistas que
-genera el pipeline de Track2Sheet: elige **Guitarra** o **Batería**, ese instrumento se silencia
-(`MUTED`) y suenan el resto de stems como acompañamiento mientras las notas de su `.mid` caen por
-una autopista estilo *Guitar Hero* y se dibujan en una partitura sincronizada.
+Interfaz web (Vite + React + TypeScript + Tailwind CSS + Tone.js) para practicar con lo que genera el
+pipeline: un link de YouTube → **6 stems** (`bass`, `drums`, `guitar`, `other`, `piano`, `vocals`) +
+un **`.mid`** de la guitarra o la batería. Diseño de referencia: [`public/boceto_v2.jpeg`](public/boceto_v2.jpeg).
+
+- Eliges **Guitarra** o **Batería**: el stem de ese instrumento se silencia (`MUTED`), el resto suena
+  y las notas de su `.mid` llegan por un **diapasón 3D estilo Rocksmith** (6 cuerdas por color,
+  trastes, sustains, acordes, notas muertas con `X`) o por **carriles de batería** (hi-hat, tarola,
+  toms, platillos y bombo).
+- Al abrir la app se carga una **canción demo** (6 stems sintetizados con Tone.js a partir de MIDI
+  reales), así que todo se puede probar sin procesar nada.
 
 ## Ejecutar
 
-Requiere Node 20+. El boceto de diseño está en [`docs/boceto_interfaz.jpeg`](../docs/boceto_interfaz.jpeg).
+Requiere Node 20+.
 
 ```bash
 cd interfaz
 npm install
 npm run dev          # http://localhost:5173
-```
-
-Producción:
-
-```bash
 npm run build        # type-check + build en dist/
 npm run preview      # sirve dist/ (con la API de output/ incluida)
 ```
 
-Al abrir la app se carga una **canción demo** (MIDI generado + audio sintetizado con Tone.js), así
-que se puede probar sin haber procesado nada.
+## Link de YouTube
 
-## Canciones de `output/`
+`handleYoutubeSubmit(url)` (en `useMultiTrackPlayer`) valida el enlace y llama a
+`processYoutube()` de `src/utils/pipelineApi.ts`:
 
-El servidor de Vite (dev y preview) expone la carpeta `../output` del proyecto:
+- Sin backend: simula las etapas (descarga → separación → transcripción) y carga la demo.
+- Con backend: define `VITE_PIPELINE_URL` y la app hará `POST ${VITE_PIPELINE_URL}/process`
+  con `{ "url": "..." }`. Respuesta esperada:
 
-| Ruta | Contenido |
-|---|---|
-| `GET /api/songs` | canciones encontradas en `output/stems/<canción>/` |
-| `GET /api/file?p=<ruta>` | un archivo dentro de `output/` |
-
-Estructura esperada (los `.mid` pueden ir junto a los stems o en `output/midi/<canción>/`):
-
-```
-output/stems/<canción>/guitar.wav  drums.wav  vocals.wav  bass.wav  piano.wav  other.wav
-output/midi/<canción>/guitar.mid   drums.mid
+```json
+{ "id": "abc", "title": "Canción",
+  "stems": { "bass": "<url>", "drums": "<url>", "guitar": "<url>", "other": "<url>", "piano": "<url>", "vocals": "<url>" },
+  "midi":  { "guitar": "<url>", "drums": "<url>" } }
 ```
 
-- `guitar.*` → pista **Guitarra**, `drums.*` → **Batería**, el resto (voces, bajo, piano, otros) se
-  mezcla en **Voces / Otros**.
-- Los MIDI se reconocen por nombre (`guitar`/`guitarra`, `drum`/`batería`).
-- Una pista sin audio pero con `.mid` se sintetiza; una canción sin `.mid` suena pero no muestra notas.
+## Cargar archivos
 
-Para usar otra carpeta: `TRACK2SHEET_OUTPUT=/ruta/a/output npm run dev`.
+- Botón **Cargar** de ARCHIVOS (o arrastrar a la ventana): los archivos se asignan por nombre
+  (`bass/bajo`, `drums/batería`, `guitar/guitarra`, `piano`, `vocals/voz`, `other/otros`).
+- Menú `⋮` de cada stem: volumen, cargar el audio de ese stem y, en `guitar`/`drums`, su `.mid`.
+- Un `.mid` solo reemplaza las notas de la canción actual; un audio crea (o completa) una canción local.
 
-## Cargar archivos locales
-
-Botón **Cargar .mid / stems** (o arrastrar archivos a la ventana):
-
-- Solo `.mid` → se añaden a la canción actual (por nombre; si el nombre no indica instrumento, al
-  instrumento seleccionado).
-- Con audio → se crea una canción local nueva con todos los archivos.
+También se leen las canciones ya procesadas en `../output` (servidor de Vite):
+`output/stems/<canción>/{bass,drums,guitar,other,piano,vocals}.wav` y `output/midi/<canción>/{guitar,drums}.mid`.
+Otra carpeta: `TRACK2SHEET_OUTPUT=/ruta npm run dev`.
 
 ## Controles
 
-| Tecla | Acción |
+| Control | Acción |
 |---|---|
-| `Espacio` | Play / Pausa |
-| `A S D F G` o `1 2 3 4 5` | carriles 1–5 (en batería: Bombo, Caja, Hi-Hat, Toms, Platillos) |
-
-La barra bajo la partitura permite saltar a cualquier punto.
+| ▶ / `Espacio` | Play: todos los stems a la vez, con el instrumento elegido silenciado |
+| ⏸ | Pausa todo y congela la autopista en el punto exacto |
+| ⏮ | Detiene y regresa los 6 stems y el `.mid` a 00:00 |
+| ▶ de cada stem | Solo: escuchar ese stem sincronizado (sirve para oír la guitarra/batería original) |
+| 🔊 de cada stem | Silenciar / activar |
+| **Tocar con teclado** | Guitarra: `A S D F G H` = cuerdas E A D G B e. Batería: `A S D F G` = pads, `J` = bombo |
 
 ## Estructura
 
 ```
-server/outputApi.ts          middleware de Vite que lee output/
-src/hooks/useMidiPlayer.ts   estado: canciones, instrumento, mutes, transporte (reloj maestro)
-src/hooks/useCanvas.ts       canvas con DPR + bucle requestAnimationFrame
-src/utils/midiParser.ts      @tonejs/midi -> notas, carriles, BPM, compases
-src/utils/audioEngine.ts     Tone.js: stems / sintetizadores por pista, mute, transporte
-src/utils/songLoader.ts      API / archivos locales -> canción decodificada
-src/utils/demoSong.ts        canción demo generada como .mid
-src/components/LeftPanel     instrumento seleccionado + pistas activas con visualizador
-src/components/SheetMusic    pentagrama en canvas con playhead y barra de progreso
-src/components/NoteHighway   autopista 3D a 60 FPS, aciertos y fuego
-src/components/RightPanel    tiempo, archivo/canción y controles
+server/outputApi.ts               middleware de Vite que lee output/
+scripts/make_stage_bg.py          recorta el fondo blanco de la ardilla → public/ardilla-stage.webp
+src/hooks/useMultiTrackPlayer.ts  estado: canciones, instrumento, mute/solo/volumen, transporte, YouTube
+src/utils/audioEngine.ts          Tone.js: 6 stems (audio o synth) en un único reloj maestro
+src/utils/midiParser.ts           @tonejs/midi → notas, BPM, compases
+src/utils/midiToFretboard.ts      notas → (cuerda, traste) con digitación; notas → carriles de batería
+src/utils/pipelineApi.ts          puente con el backend (YouTube → stems + .mid), simulado por defecto
+src/utils/songLoader.ts           API / archivos locales → canción decodificada
+src/utils/demoSong.ts             canción demo: 6 .mid generados
+src/components/LeftPanel          instrumento a practicar + pistas activas con medidores
+src/components/YoutubeUrlBar      "Ingresar link de youtube" con progreso de las etapas
+src/components/FretboardHighway   canvas: diapasón 3D / batería sobre el escenario con la ardilla
+src/components/RightPanel         reloj, ARCHIVOS (6 stems) y controles de transporte
 ```

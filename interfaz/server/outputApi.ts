@@ -22,7 +22,8 @@ const MIME: Record<string, string> = {
   '.midi': 'audio/midi',
 }
 
-type Track = 'guitar' | 'drums' | 'other'
+type Stem = 'bass' | 'drums' | 'guitar' | 'other' | 'piano' | 'vocals'
+type Instrument = 'guitar' | 'drums'
 
 export interface ApiFile {
   name: string
@@ -32,15 +33,19 @@ export interface ApiFile {
 export interface ApiSong {
   id: string
   title: string
-  audio: Partial<Record<Track, ApiFile[]>>
-  midi: Partial<Record<'guitar' | 'drums', ApiFile>>
+  stems: Partial<Record<Stem, ApiFile>>
+  midi: Partial<Record<Instrument, ApiFile>>
 }
 
-export function classify(fileName: string): Track {
+export function classify(fileName: string): Stem | null {
   const n = fileName.toLowerCase()
   if (/guitar|guitarra/.test(n)) return 'guitar'
   if (/drum|bater[ií]a|percus/.test(n)) return 'drums'
-  return 'other'
+  if (/bass|bajo/.test(n)) return 'bass'
+  if (/piano|keys|teclado/.test(n)) return 'piano'
+  if (/vocal|voice|voz|voces/.test(n)) return 'vocals'
+  if (/other|otros/.test(n)) return 'other'
+  return null
 }
 
 function prettyTitle(dir: string): string {
@@ -69,17 +74,18 @@ function scanSongs(root: string): ApiSong[] {
   }
 
   return dirs.map((dir) => {
-    const song: ApiSong = { id: dir, title: prettyTitle(dir), audio: {}, midi: {} }
+    const song: ApiSong = { id: dir, title: prettyTitle(dir), stems: {}, midi: {} }
     const candidates = [path.join(stemsDir, dir), path.join(root, 'midi', dir)]
     for (const folder of candidates) {
       for (const f of listFiles(folder)) {
         const ext = path.extname(f).toLowerCase()
         const rel = path.relative(root, path.join(folder, f)).split(path.sep).join('/')
-        const track = classify(f)
+        const stem = classify(f)
+        if (!stem) continue
         if (AUDIO_EXT.has(ext)) {
-          ;(song.audio[track] ??= []).push({ name: f, path: rel })
-        } else if (MIDI_EXT.has(ext) && track !== 'other' && !song.midi[track]) {
-          song.midi[track] = { name: f, path: rel }
+          song.stems[stem] ??= { name: f, path: rel }
+        } else if (MIDI_EXT.has(ext) && (stem === 'guitar' || stem === 'drums')) {
+          song.midi[stem] ??= { name: f, path: rel }
         }
       }
     }

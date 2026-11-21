@@ -1,4 +1,5 @@
-import type { FileRef, LoadedSong, ParsedMidi, SongSource, TrackId } from '../types'
+import type { FileRef, InstrumentId, LoadedSong, LoadedStem, ParsedMidi, SongSource, StemId } from '../types'
+import { STEM_IDS } from '../types'
 import { parseMidi } from './midiParser'
 
 interface ApiFile {
@@ -8,8 +9,8 @@ interface ApiFile {
 interface ApiSong {
   id: string
   title: string
-  audio: Partial<Record<TrackId, ApiFile[]>>
-  midi: Partial<Record<TrackId, ApiFile>>
+  stems: Partial<Record<StemId, ApiFile>>
+  midi: Partial<Record<InstrumentId, ApiFile>>
 }
 
 const apiRef = (f: ApiFile): FileRef => ({ name: f.name, url: `/api/file?p=${encodeURIComponent(f.path)}` })
@@ -24,39 +25,48 @@ export async function fetchServerSongs(): Promise<SongSource[]> {
       id: `server:${s.id}`,
       title: s.title,
       origin: 'server',
+      stems: Object.fromEntries(Object.entries(s.stems).map(([k, f]) => [k, apiRef(f!)])),
       midi: Object.fromEntries(Object.entries(s.midi).map(([k, f]) => [k, apiRef(f!)])),
-      audio: Object.fromEntries(Object.entries(s.audio).map(([k, fs]) => [k, fs!.map(apiRef)])),
     }))
   } catch {
     return []
   }
 }
 
-export function classifyFile(name: string): TrackId {
+export const isMidiFile = (f: File) => /\.midi?$/i.test(f.name)
+export const isAudioFile = (f: File) => !isMidiFile(f) && (f.type.startsWith('audio/') || /\.(wav|mp3|flac|ogg|m4a|aac)$/i.test(f.name))
+
+/** Stem a file belongs to, from its name (English model names + Spanish), or null. */
+export function stemFromName(name: string): StemId | null {
   const n = name.toLowerCase()
   if (/guitar|guitarra/.test(n)) return 'guitar'
   if (/drum|bater[ií]a|percus/.test(n)) return 'drums'
-  return 'other'
+  if (/bass|bajo/.test(n)) return 'bass'
+  if (/piano|keys|teclado/.test(n)) return 'piano'
+  if (/vocal|voice|voz|voces/.test(n)) return 'vocals'
+  if (/other|otros/.test(n)) return 'other'
+  return null
 }
 
-export const isMidiFile = (f: File) => /\.midi?$/i.test(f.name)
-export const isAudioFile = (f: File) => f.type.startsWith('audio/') && !isMidiFile(f)
+export const isInstrument = (id: StemId | null): id is InstrumentId => id === 'guitar' || id === 'drums'
 
 /**
- * Turn files picked by the user into a song. Files are routed by name
- * (guitar/guitarra, drums/batería, anything else -> Voces / Otros); a MIDI with an
- * unrecognised name goes to `fallbackInstrument`.
+ * Route user files into a song source. Audio goes to the stem named in the file (or `target`, or
+ * `other`); a .mid goes to the instrument named in the file (or `target` / `fallbackInstrument`).
  */
-export function buildLocalSong(files: File[], fallbackInstrument: TrackId): SongSource {
-  const song: SongSource = { id: `local:${Date.now()}`, title: '', origin: 'local', midi: {}, audio: {} }
+export function assignFiles(base: SongSource, files: File[], target: StemId | null, fallbackInstrument: InstrumentId): SongSource {
+  const next: SongSource = { ...base, stems: { ...base.stems }, midi: { ...base.midi } }
   for (const file of files) {
-    const track = classifyFile(file.name)
-    if (isMidiFile(file)) song.midi[track === 'other' ? fallbackInstrument : track] = { name: file.name, file }
-    else if (isAudioFile(file)) (song.audio[track] ??= []).push({ name: file.name, file })
+    const named = stemFromName(file.name)
+    if (isMidiFile(file)) {
+      const inst = isInstrument(named) ? named : isInstrument(target) ? target : fallbackInstrument
+      next.midi[inst] = { name: file.name, file }
+    } else if (isAudioFile(file)) {
+      const stem = files.length === 1 && target ? target : (named ?? target ?? 'other')
+      next.stems[stem] = { name: file.name, file }
+    }
   }
-  const first = files[0]?.name.replace(/\.[^.]+$/, '') ?? 'Canción local'
-  song.title = files.length > 1 ? `${first} (+${files.length - 1})` : first
-  return song
+  return next
 }
 
 async function readRef(ref: FileRef): Promise<ArrayBuffer> {
@@ -70,50 +80,37 @@ async function readRef(ref: FileRef): Promise<ArrayBuffer> {
   throw new Error(`Archivo sin origen: ${ref.name}`)
 }
 
-/** Sum several decoded stems into one buffer (stems of a separation add up to the mix). */
-function mixBuffers(buffers: AudioBuffer[]): AudioBuffer {
-  if (buffers.length === 1) return buffers[0]
-  const length = Math.max(...buffers.map((b) => b.length))
-  const channels = Math.max(...buffers.map((b) => b.numberOfChannels))
-  const out = new AudioBuffer({ numberOfChannels: channels, length, sampleRate: buffers[0].sampleRate })
-  for (let ch = 0; ch < channels; ch++) {
-    const dst = out.getChannelData(ch)
-    for (const b of buffers) {
-      const src = b.getChannelData(Math.min(ch, b.numberOfChannels - 1))
-      for (let i = 0; i < src.length; i++) dst[i] += src[i]
-    }
-  }
-  return out
-}
-
 export async function loadSong(
   source: SongSource,
   decode: (data: ArrayBuffer) => Promise<AudioBuffer>,
   onProgress: (message: string) => void,
 ): Promise<LoadedSong> {
-  const midi: Partial<Record<TrackId, ParsedMidi>> = {}
-  for (const [track, ref] of Object.entries(source.midi) as [TrackId, FileRef][]) {
+  const midi: Partial<Record<InstrumentId, ParsedMidi>> = {}
+  for (const [inst, ref] of Object.entries(source.midi) as [InstrumentId, FileRef][]) {
     onProgress(`Leyendo ${ref.name}…`)
-    midi[track] = parseMidi(await readRef(ref), ref.name, track)
+    midi[inst] = parseMidi(await readRef(ref), ref.name, inst === 'drums')
   }
 
-  const audio: Partial<Record<TrackId, AudioBuffer>> = {}
-  for (const [track, refs] of Object.entries(source.audio) as [TrackId, FileRef[]][]) {
-    const decoded: AudioBuffer[] = []
-    for (const ref of refs) {
-      onProgress(`Decodificando ${ref.name}…`)
-      decoded.push(await decode(await readRef(ref)))
+  const stems: Partial<Record<StemId, LoadedStem>> = {}
+  for (const id of STEM_IDS) {
+    const audio = source.stems[id]
+    if (audio) {
+      onProgress(`Decodificando ${audio.name}…`)
+      try {
+        const buffer = await decode(await readRef(audio))
+        stems[id] = { name: audio.name, kind: 'audio', duration: buffer.duration, buffer }
+        continue
+      } catch (e) {
+        throw new Error(`No se pudo decodificar ${audio.name}: ${e instanceof Error ? e.message : e}`)
+      }
     }
-    if (decoded.length) {
-      if (decoded.length > 1) onProgress('Mezclando pistas de acompañamiento…')
-      audio[track] = mixBuffers(decoded)
+    const synthRef = source.synth?.[id]
+    if (synthRef) {
+      const parsed = parseMidi(await readRef(synthRef), synthRef.name, id === 'drums')
+      stems[id] = { name: `${id}.wav (sintetizado)`, kind: 'synth', duration: parsed.duration + 0.5, synth: parsed }
     }
   }
 
-  const duration = Math.max(
-    1,
-    ...Object.values(audio).map((b) => b!.duration),
-    ...Object.values(midi).map((m) => m!.duration + 0.5),
-  )
-  return { source, midi, audio, duration }
+  const duration = Math.max(1, ...Object.values(stems).map((s) => s!.duration), ...Object.values(midi).map((m) => m!.duration + 0.5))
+  return { source, stems, midi, duration }
 }
