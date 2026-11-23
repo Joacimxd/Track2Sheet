@@ -1,4 +1,7 @@
-"""Usage: python3 scripts/make_stage_bg.py public/ardilla.jpeg public/ardilla-stage.webp /tmp/preview.jpg
+"""Usage: python3 scripts/make_stage_bg.py SRC DST.webp PREVIEW.jpg [BRIGHT=196] [MAXSAT=22]
+
+  guitarra: python3 scripts/make_stage_bg.py public/ardilla.jpg public/ardilla-guitarra.webp /tmp/g.jpg
+  bateria:  python3 scripts/make_stage_bg.py public/ardilla_bateria.jpg public/ardilla-bateria.webp /tmp/b.jpg 236 12
 
 Remove the white studio background (and watermark grid lines on it) from the squirrel photo.
 
@@ -11,6 +14,8 @@ from collections import deque
 from PIL import Image, ImageFilter
 
 src, dst, preview = sys.argv[1], sys.argv[2], sys.argv[3]
+BRIGHT = int(sys.argv[4]) if len(sys.argv) > 4 else 196
+MAXSAT = int(sys.argv[5]) if len(sys.argv) > 5 else 22
 im = Image.open(src).convert('RGB')
 w, h = im.size
 px = im.load()
@@ -18,7 +23,7 @@ px = im.load()
 
 def is_bg(rgb, bright):
     r, g, b = rgb
-    return min(r, g, b) >= bright and max(r, g, b) - min(r, g, b) <= 22
+    return min(r, g, b) >= bright and max(r, g, b) - min(r, g, b) <= MAXSAT
 
 
 mask = bytearray(w * h)  # 1 = background
@@ -30,7 +35,7 @@ for y in range(h):
 while q:
     x, y = q.popleft()
     i = y * w + x
-    if mask[i] or not is_bg(px[x, y], 196):
+    if mask[i] or not is_bg(px[x, y], BRIGHT):
         continue
     mask[i] = 1
     if x > 0: q.append((x - 1, y))

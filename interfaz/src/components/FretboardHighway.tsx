@@ -47,7 +47,22 @@ interface Score {
   hits: number
   misses: number
   streak: number
+  points: number
 }
+
+interface Popup {
+  x: number
+  y: number
+  text: string
+  color: string
+  size: number
+  life: number
+  max: number
+}
+
+/** ± seconds for a "PERFECTO" (otherwise "BIEN"). */
+const PERFECT_WINDOW = 0.05
+const EMPTY_SCORE: Score = { hits: 0, misses: 0, streak: 0, points: 0 }
 
 // ───────── colour helpers ─────────
 function rgb(hex: string): [number, number, number] {
@@ -79,7 +94,7 @@ function lowerBound(arr: readonly ({ time: number } | number)[], t: number) {
 export function FretboardHighway({ instrument, tab, drumNotes, midi, getTime, playing }: Props) {
   const imgRef = useRef<HTMLImageElement>(null)
   const [practice, setPractice] = useState(false)
-  const [score, setScore] = useState<Score>({ hits: 0, misses: 0, streak: 0 })
+  const [score, setScore] = useState<Score>(EMPTY_SCORE)
 
   // Mutable animation state (never triggers React renders).
   const fx = useRef({
@@ -90,9 +105,10 @@ export function FretboardHighway({ instrument, tab, drumNotes, midi, getTime, pl
     judged: new Map<number, 'hit' | 'miss'>(),
     particles: [] as Particle[],
     misses: [] as { x: number; y: number; life: number }[],
-    pendingHits: [] as number[],
+    pendingHits: [] as { id: number; dt: number }[],
+    popups: [] as Popup[],
     lastNow: 0,
-    score: { hits: 0, misses: 0, streak: 0 } as Score,
+    score: EMPTY_SCORE,
   })
 
   const practiceRef = useRef(practice)
@@ -102,22 +118,27 @@ export function FretboardHighway({ instrument, tab, drumNotes, midi, getTime, pl
 
   const resetScore = () => {
     fx.current.judged.clear()
-    fx.current.score = { hits: 0, misses: 0, streak: 0 }
+    fx.current.score = EMPTY_SCORE
+    fx.current.popups = []
     setScore(fx.current.score)
   }
 
   // New notes / mode → forget judgements.
   useEffect(() => {
     fx.current.judged.clear()
-    fx.current.score = { hits: 0, misses: 0, streak: 0 }
+    fx.current.score = EMPTY_SCORE
+    fx.current.popups = []
     fx.current.snapCam = true
   }, [tab, drumNotes, instrument])
 
-  const judge = (id: number, result: 'hit' | 'miss') => {
+  const judge = (id: number, result: 'hit' | 'miss', points = 0) => {
     const f = fx.current
     f.judged.set(id, result)
     const s = f.score
-    f.score = result === 'hit' ? { hits: s.hits + 1, misses: s.misses, streak: s.streak + 1 } : { hits: s.hits, misses: s.misses + 1, streak: 0 }
+    f.score =
+      result === 'hit'
+        ? { hits: s.hits + 1, misses: s.misses, streak: s.streak + 1, points: s.points + points }
+        : { hits: s.hits, misses: s.misses + 1, streak: 0, points: s.points }
     setScore(f.score)
   }
 
@@ -144,8 +165,8 @@ export function FretboardHighway({ instrument, tab, drumNotes, midi, getTime, pl
         if (!best || dt < best.dt) best = { id: n.id, dt }
       }
       if (best) {
-        judge(best.id, 'hit')
-        f.pendingHits.push(best.id)
+        judge(best.id, 'hit', best.dt <= PERFECT_WINDOW ? 150 : 100)
+        f.pendingHits.push(best)
         f.glow[idx] = 1
       }
     }
@@ -283,15 +304,22 @@ export function FretboardHighway({ instrument, tab, drumNotes, midi, getTime, pl
     }
 
     // Practice mode: notes that went past the window unplayed are misses.
-    const missCheck = <T extends { id: number; time: number }>(notes: T[], where: (n: T) => { x: number; y: number }) => {
+    const missCheck = <T extends { id: number; time: number }>(
+      notes: T[],
+      where: (n: T) => { x: number; y: number },
+      onMiss?: (n: T, at: { x: number; y: number }) => void,
+    ) => {
       if (!practiceRef.current) return
       for (let i = lowerBound(notes, now - HIT_WINDOW - 0.5); i < notes.length && notes[i].time < now - HIT_WINDOW; i++) {
         const n = notes[i]
         if (f.judged.has(n.id)) continue
         judge(n.id, 'miss')
-        f.misses.push({ ...where(n), life: 0.6 })
+        const at = where(n)
+        f.misses.push({ ...at, life: 0.6 })
+        onMiss?.(n, at)
       }
     }
+    const popup = (x: number, y: number, text: string, color: string, size: number, life = 0.8) => f.popups.push({ x, y, text, color, size, life, max: life })
     // Auto mode: light up whatever crosses the impact line.
     const crossed = <T extends { time: number }>(notes: T[], fire: (n: T) => void) => {
       if (practiceRef.current || !playing || now <= prevNow || now - prevNow > 0.25) return
@@ -534,33 +562,64 @@ export function FretboardHighway({ instrument, tab, drumNotes, midi, getTime, pl
         if (!n.muted) spark(at(n).x, at(n).y, STRING_COLORS[n.string], 10)
       })
       missCheck(notes, at)
-      for (const id of f.pendingHits.splice(0)) {
+      for (const { id } of f.pendingHits.splice(0)) {
         const n = notes[id]
         if (n) spark(at(n).x, at(n).y, STRING_COLORS[n.string], 18)
       }
     } else {
-      // ───────────────────────── Drums: 5 pads + kick bar ─────────────────────────
+      // ───────────── Drums: lanes → hit line → drum kit (boceto v3) ─────────────
       const notes = drumNotes
-      const padY = h * 0.84
+      const hitY = h * 0.6
       const laneW = (right - left) / DRUM_LANES.length
       const laneX = (i: number) => left + (i + 0.5) * laneW
+      const laneColor = (lane: number) => (lane === KICK_LANE ? KICK.color : DRUM_LANES[lane].color)
+      const kickGlow = Math.max(f.glow[KICK_LANE], f.keyFlash[KICK_LANE] * 0.6)
 
-      floorQuad(left, right, padY, 0, 1.05)
-      ctx.fillStyle = 'rgba(6,14,28,0.3)'
+      // Highway floor + lanes.
+      floorQuad(left, right, hitY, 0, 1.05)
+      ctx.fillStyle = 'rgba(6,14,28,0.42)'
       ctx.fill()
       DRUM_LANES.forEach((lane, i) => {
-        floorQuad(left + i * laneW, left + (i + 1) * laneW, padY, 0, 1.05)
-        ctx.fillStyle = rgba(lane.color, 0.05 + f.glow[i] * 0.12)
+        floorQuad(left + i * laneW, left + (i + 1) * laneW, hitY, 0, 1.05)
+        const g = ctx.createLinearGradient(0, hitY, 0, vy + (hitY - vy) / (1 + DEPTH))
+        g.addColorStop(0, rgba(lane.color, 0.1 + f.glow[i] * 0.25))
+        g.addColorStop(1, rgba(lane.color, 0.01))
+        ctx.fillStyle = g
         ctx.fill()
       })
       for (let i = 0; i <= DRUM_LANES.length; i++) {
-        const a = proj(left + i * laneW, padY, 0)
-        const b = proj(left + i * laneW, padY, 1.05)
-        ctx.strokeStyle = 'rgba(190,215,255,0.25)'
+        const a = proj(left + i * laneW, hitY, 0)
+        const b = proj(left + i * laneW, hitY, 1.05)
+        ctx.strokeStyle = i === 0 || i === DRUM_LANES.length ? 'rgba(190,215,255,0.4)' : 'rgba(190,215,255,0.18)'
         ctx.lineWidth = 1.2
         line(a.x, a.y, b.x, b.y)
       }
-      beatLines(left, right, padY)
+      beatLines(left, right, hitY)
+
+      // Hollow, glowing note bars.
+      const gem = (x: number, y: number, bw: number, bh: number, color: string, alpha: number, glow: boolean) => {
+        ctx.save()
+        ctx.globalAlpha = alpha
+        const r = Math.min(bh * 0.35, 6)
+        ctx.shadowColor = color
+        ctx.shadowBlur = glow ? 30 : 12
+        ctx.fillStyle = rgba(color, glow ? 0.45 : 0.2)
+        ctx.strokeStyle = color
+        ctx.lineWidth = Math.max(1.5, bh * 0.24)
+        ctx.beginPath()
+        ctx.roundRect(x - bw / 2, y - bh / 2, bw, bh, r)
+        ctx.fill()
+        ctx.stroke()
+        ctx.shadowBlur = 0
+        if (bh > 6) {
+          ctx.strokeStyle = 'rgba(255,255,255,0.75)'
+          ctx.lineWidth = Math.max(1, bh * 0.08)
+          ctx.beginPath()
+          ctx.roundRect(x - bw / 2 + bh * 0.3, y - bh * 0.2, bw - bh * 0.6, bh * 0.4, r * 0.5)
+          ctx.stroke()
+        }
+        ctx.restore()
+      }
 
       const start = lowerBound(notes, now - 0.2)
       const end = lowerBound(notes, now + LOOK_AHEAD * 1.05)
@@ -572,56 +631,213 @@ export function FretboardHighway({ instrument, tab, drumNotes, midi, getTime, pl
         const alpha = n.time < now ? Math.max(0, 1 - (now - n.time) / 0.1) : 1
         const near = Math.abs(n.time - now) < 0.06
         if (n.lane === KICK_LANE) {
-          const a = proj(left + 6, padY, d)
-          const b = proj(right - 6, padY, d)
-          block((a.x + b.x) / 2, a.y, b.x - a.x, laneW * 0.09 * a.p, KICK.color, { alpha, glow: near })
+          const a = proj(left + 8, hitY, d)
+          const b = proj(right - 8, hitY, d)
+          gem((a.x + b.x) / 2, a.y, b.x - a.x, Math.max(3, laneW * 0.06 * a.p), KICK.color, alpha * 0.9, near)
         } else {
-          const lane = DRUM_LANES[n.lane]
-          const p = proj(laneX(n.lane), padY, d)
-          block(p.x, p.y - laneW * 0.06 * p.p, laneW * 0.7 * p.p, laneW * 0.2 * p.p, lane.color, { alpha, glow: near })
+          const p = proj(laneX(n.lane), hitY, d)
+          gem(p.x, p.y, laneW * 0.66 * p.p, Math.max(4, laneW * 0.13 * p.p), DRUM_LANES[n.lane].color, alpha, near)
         }
       }
 
-      // Kick line + pads at the impact plane.
-      ctx.strokeStyle = KICK.color
-      ctx.lineWidth = 4 + f.glow[KICK_LANE] * 4
-      ctx.shadowColor = KICK.color
-      ctx.shadowBlur = 8 + f.glow[KICK_LANE] * 24
-      line(left, padY + laneW * 0.11, right, padY + laneW * 0.11)
+      // Hit line: bright rail with a coloured target per lane.
+      ctx.shadowColor = kickGlow > 0.05 ? KICK.color : '#bfe9ff'
+      ctx.shadowBlur = 10 + kickGlow * 26
+      ctx.strokeStyle = kickGlow > 0.05 ? shade(KICK.color, 0.5 - kickGlow * 0.3) : 'rgba(235,245,255,0.9)'
+      ctx.lineWidth = 3 + kickGlow * 3
+      line(left, hitY, right, hitY)
       DRUM_LANES.forEach((lane, i) => {
         const g = Math.max(f.glow[i], f.keyFlash[i] * 0.6)
+        const tw = laneW * 0.7
+        const th = Math.max(6, laneW * 0.13)
         ctx.shadowColor = lane.color
-        ctx.shadowBlur = 8 + g * 26
-        ctx.lineWidth = 3 + g * 2
-        ctx.strokeStyle = g > 0.05 ? shade(lane.color, 0.4 * g) : lane.color
-        ctx.fillStyle = rgba(lane.color, 0.12 + g * 0.35)
+        ctx.shadowBlur = 6 + g * 28
+        ctx.strokeStyle = g > 0.05 ? shade(lane.color, 0.45 * g) : rgba(lane.color, 0.7)
+        ctx.fillStyle = rgba(lane.color, 0.06 + g * 0.4)
+        ctx.lineWidth = 2 + g * 2
         ctx.beginPath()
-        ctx.ellipse(laneX(i), padY, laneW * 0.38, laneW * 0.1, 0, 0, Math.PI * 2)
+        ctx.roundRect(laneX(i) - tw / 2, hitY - th / 2, tw, th, Math.min(th * 0.35, 6))
         ctx.fill()
         ctx.stroke()
+        ctx.lineWidth = 5 + g * 3
+        ctx.strokeStyle = lane.color
+        line(laneX(i) - tw / 2, hitY, laneX(i) + tw / 2, hitY)
       })
       ctx.shadowBlur = 0
 
-      ctx.textAlign = 'center'
-      ctx.textBaseline = 'middle'
-      DRUM_LANES.forEach((lane, i) => {
-        ctx.font = `700 ${Math.min(22, h * 0.035)}px Rajdhani, sans-serif`
-        ctx.fillStyle = lane.color
-        ctx.fillText(practiceRef.current ? `${lane.label.toUpperCase()} · ${lane.key}` : lane.label.toUpperCase(), laneX(i), h * 0.925)
-      })
-      ctx.font = `700 ${Math.min(18, h * 0.03)}px Rajdhani, sans-serif`
-      ctx.fillStyle = KICK.color
-      ctx.fillText(practiceRef.current ? `BOMBO · ${KICK.key}` : 'BOMBO', w / 2, h * 0.972)
+      // ── Drum kit under the hit line (on its own dark stage so the photo doesn't clash) ──
+      const stage = ctx.createLinearGradient(0, hitY, 0, h)
+      stage.addColorStop(0, 'rgba(4,8,16,0.55)')
+      stage.addColorStop(0.25, 'rgba(4,8,16,0.82)')
+      stage.addColorStop(1, 'rgba(4,8,16,0.92)')
+      ctx.fillStyle = stage
+      ctx.fillRect(0, hitY + 4, w, h - hitY - 4)
+      const labelSize = Math.min(18, h * 0.03)
+      const label = (text: string, key: string, color: string, x: number, y: number) => {
+        ctx.font = `700 ${labelSize}px Rajdhani, sans-serif`
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.lineWidth = 4
+        ctx.strokeStyle = 'rgba(4,8,16,0.9)'
+        const t = practiceRef.current ? `${text.toUpperCase()} · ${key}` : text.toUpperCase()
+        ctx.strokeText(t, x, y)
+        ctx.fillStyle = color
+        ctx.fillText(t, x, y)
+      }
+      const cymbal = (cx: number, cy: number, rx: number, color: string, g: number) => {
+        const ry = rx * 0.3
+        ctx.strokeStyle = 'rgba(200,212,228,0.55)'
+        ctx.lineWidth = Math.max(2, rx * 0.04)
+        line(cx, cy, cx, h)
+        ctx.save()
+        ctx.translate(cx, cy + g * rx * 0.04)
+        ctx.rotate(Math.sin(now * 26) * g * 0.12)
+        const grad = ctx.createRadialGradient(-rx * 0.25, -ry * 0.35, rx * 0.05, 0, 0, rx)
+        grad.addColorStop(0, g > 0.05 ? '#fffbe6' : '#fbe7a6')
+        grad.addColorStop(0.5, '#d4a13f')
+        grad.addColorStop(1, '#6f4b14')
+        ctx.shadowColor = color
+        ctx.shadowBlur = 10 + g * 34
+        ctx.fillStyle = grad
+        ctx.beginPath()
+        ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2)
+        ctx.fill()
+        ctx.shadowBlur = 0
+        ctx.strokeStyle = 'rgba(90,60,15,0.35)'
+        ctx.lineWidth = 1
+        for (const k of [0.38, 0.58, 0.78]) {
+          ctx.beginPath()
+          ctx.ellipse(0, 0, rx * k, ry * k, 0, 0, Math.PI * 2)
+          ctx.stroke()
+        }
+        ctx.fillStyle = '#f6d982'
+        ctx.beginPath()
+        ctx.ellipse(0, -ry * 0.05, rx * 0.15, ry * 0.22, 0, 0, Math.PI * 2)
+        ctx.fill()
+        ctx.strokeStyle = g > 0.05 ? shade(color, 0.4 * g) : rgba(color, 0.85)
+        ctx.lineWidth = 2 + g * 3
+        ctx.beginPath()
+        ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2)
+        ctx.stroke()
+        ctx.restore()
+        return cy + ry
+      }
+      const drum = (cx: number, cy: number, rx: number, color: string, g: number) => {
+        const ry = rx * 0.34
+        const depth = rx * 0.45
+        const y = cy + g * rx * 0.05
+        // Shell.
+        const sg = ctx.createLinearGradient(cx - rx, 0, cx + rx, 0)
+        sg.addColorStop(0, shade(color, -0.75))
+        sg.addColorStop(0.35, shade(color, -0.2))
+        sg.addColorStop(0.55, shade(color, 0.35))
+        sg.addColorStop(1, shade(color, -0.8))
+        ctx.fillStyle = sg
+        ctx.beginPath()
+        ctx.moveTo(cx - rx, y)
+        ctx.lineTo(cx - rx, y + depth)
+        ctx.ellipse(cx, y + depth, rx, ry, 0, Math.PI, 0, true)
+        ctx.lineTo(cx + rx, y)
+        ctx.closePath()
+        ctx.fill()
+        ctx.fillStyle = 'rgba(225,232,242,0.8)'
+        for (const k of [-0.7, -0.25, 0.25, 0.7]) ctx.fillRect(cx + k * rx - rx * 0.025, y + depth * 0.25 + Math.abs(k) * ry * 0.4, rx * 0.05, depth * 0.45)
+        // Head.
+        ctx.shadowColor = color
+        ctx.shadowBlur = 8 + g * 32
+        const hg = ctx.createRadialGradient(cx - rx * 0.2, y - ry * 0.3, rx * 0.05, cx, y, rx)
+        hg.addColorStop(0, '#ffffff')
+        hg.addColorStop(1, '#bcc7d4')
+        ctx.fillStyle = hg
+        ctx.beginPath()
+        ctx.ellipse(cx, y, rx, ry, 0, 0, Math.PI * 2)
+        ctx.fill()
+        ctx.shadowBlur = 0
+        ctx.fillStyle = rgba(color, 0.12 + g * 0.55)
+        ctx.fill()
+        ctx.strokeStyle = '#d5dde8'
+        ctx.lineWidth = Math.max(2, rx * 0.05)
+        ctx.stroke()
+        ctx.strokeStyle = g > 0.05 ? shade(color, 0.45 * g) : rgba(color, 0.85)
+        ctx.lineWidth = 2 + g * 3
+        ctx.beginPath()
+        ctx.ellipse(cx, y, rx * 0.9, ry * 0.9, 0, 0, Math.PI * 2)
+        ctx.stroke()
+        return y + depth + ry
+      }
 
-      const at = (n: DrumNote) => ({ x: n.lane === KICK_LANE ? w / 2 : laneX(n.lane), y: padY })
+      const padR = Math.min(laneW * 0.4, h * 0.1)
+      const rowHi = h * 0.72
+      const rowLo = h * 0.84
+      // Bass drum: front head, centred at the bottom, partly behind the toms.
+      {
+        const R = Math.min(laneW * 0.62, h * 0.17)
+        const cx = w / 2
+        const cy = h + R * 0.12
+        const bump = kickGlow * R * 0.03
+        ctx.shadowColor = KICK.color
+        ctx.shadowBlur = 10 + kickGlow * 36
+        ctx.fillStyle = shade(KICK.color, -0.6)
+        ctx.beginPath()
+        ctx.arc(cx, cy, R + bump, 0, Math.PI * 2)
+        ctx.fill()
+        ctx.shadowBlur = 0
+        const hg = ctx.createRadialGradient(cx - R * 0.25, cy - R * 0.35, R * 0.1, cx, cy, R)
+        hg.addColorStop(0, '#ffffff')
+        hg.addColorStop(1, '#aeb9c7')
+        ctx.fillStyle = hg
+        ctx.beginPath()
+        ctx.arc(cx, cy, R * 0.86 + bump, 0, Math.PI * 2)
+        ctx.fill()
+        ctx.fillStyle = rgba(KICK.color, 0.1 + kickGlow * 0.5)
+        ctx.fill()
+        ctx.strokeStyle = '#d5dde8'
+        ctx.lineWidth = Math.max(2, R * 0.04)
+        ctx.stroke()
+        ctx.strokeStyle = kickGlow > 0.05 ? shade(KICK.color, 0.4 * kickGlow) : KICK.color
+        ctx.lineWidth = 2 + kickGlow * 3
+        ctx.beginPath()
+        ctx.arc(cx, cy, R * 0.74 + bump, 0, Math.PI * 2)
+        ctx.stroke()
+        label(KICK.label, KICK.key, KICK.color, cx, cy - R * 0.5)
+      }
+      // Back row (hi-hat, tom alto, crash) then front row (tarola, tom piso).
+      const kit: { lane: number; kind: 'cymbal' | 'drum'; y: number; r: number }[] = [
+        { lane: 0, kind: 'cymbal', y: rowHi, r: padR * 1.05 },
+        { lane: 2, kind: 'drum', y: rowHi, r: padR * 0.85 },
+        { lane: 4, kind: 'cymbal', y: rowHi - h * 0.01, r: padR * 1.2 },
+        { lane: 1, kind: 'drum', y: rowLo, r: padR * 0.95 },
+        { lane: 3, kind: 'drum', y: rowLo, r: padR * 1.05 },
+      ]
+      for (const pad of kit) {
+        const lane = DRUM_LANES[pad.lane]
+        const g = Math.max(f.glow[pad.lane], f.keyFlash[pad.lane] * 0.6)
+        const x = laneX(pad.lane)
+        const bottom = pad.kind === 'cymbal' ? cymbal(x, pad.y, pad.r, lane.color, g) : drum(x, pad.y, pad.r, lane.color, g)
+        label(lane.label, lane.key, lane.color, x, Math.min(h - labelSize * 0.7, bottom + labelSize * 0.8))
+      }
+
+      // Impact events: sparks on the hit line, judgement popups in practice mode.
+      const at = (n: DrumNote) => ({ x: n.lane === KICK_LANE ? w / 2 : laneX(n.lane), y: hitY })
       crossed(notes, (n) => {
         f.glow[n.lane] = 1
-        spark(at(n).x, at(n).y, n.lane === KICK_LANE ? KICK.color : DRUM_LANES[n.lane].color, n.lane === KICK_LANE ? 6 : 12)
+        spark(at(n).x, at(n).y, laneColor(n.lane), n.lane === KICK_LANE ? 6 : 12)
       })
-      missCheck(notes, at)
-      for (const id of f.pendingHits.splice(0)) {
+      // One judgement banner at a time, above the hit line.
+      const bannerY = hitY - h * 0.13
+      const banner = (text: string, color: string) => {
+        f.popups = f.popups.filter((p) => p.y !== bannerY)
+        popup(w / 2, bannerY, text, color, Math.min(44, h * 0.065), 0.6)
+      }
+      missCheck(notes, at, () => banner('FALLO', '#ff3b46'))
+      for (const { id, dt: off } of f.pendingHits.splice(0)) {
         const n = notes[id]
-        if (n) spark(at(n).x, at(n).y, n.lane === KICK_LANE ? KICK.color : DRUM_LANES[n.lane].color, 18)
+        if (!n) continue
+        const p = at(n)
+        const perfect = off <= PERFECT_WINDOW
+        spark(p.x, p.y, laneColor(n.lane), 18)
+        popup(p.x, p.y - laneW * 0.12, perfect ? '+150' : '+100', '#ffffff', Math.min(30, h * 0.045))
+        banner(perfect ? '¡PERFECTO!' : '¡BIEN!', perfect ? '#ffd23f' : '#38d6ff')
       }
     }
 
@@ -652,6 +868,26 @@ export function FretboardHighway({ instrument, tab, drumNotes, midi, getTime, pl
     }
     ctx.globalAlpha = 1
     ctx.lineCap = 'butt'
+    // Score / judgement popups: pop in, float up, fade out.
+    f.popups = f.popups.filter((pp) => (pp.life -= dt) > 0)
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    for (const pp of f.popups) {
+      const age = pp.max - pp.life
+      const scale = 1 + Math.max(0, 0.12 - age) * 3
+      ctx.globalAlpha = Math.min(1, pp.life * 3)
+      ctx.font = `italic 800 ${Math.round(pp.size * scale)}px Rajdhani, sans-serif`
+      const y = pp.y - age * 50
+      ctx.lineWidth = 5
+      ctx.strokeStyle = 'rgba(4,8,16,0.85)'
+      ctx.strokeText(pp.text, pp.x, y)
+      ctx.shadowColor = pp.color
+      ctx.shadowBlur = 16
+      ctx.fillStyle = pp.color
+      ctx.fillText(pp.text, pp.x, y)
+      ctx.shadowBlur = 0
+    }
+    ctx.globalAlpha = 1
 
     // Decay glows.
     const decay = Math.exp(-dt * 5)
@@ -670,7 +906,7 @@ export function FretboardHighway({ instrument, tab, drumNotes, midi, getTime, pl
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_50%_38%,rgba(40,96,150,0.55),transparent_62%),radial-gradient(ellipse_at_50%_100%,rgba(56,214,255,0.12),transparent_55%)]" />
       <img
         ref={imgRef}
-        src={`${import.meta.env.BASE_URL}ardilla-stage.webp`}
+        src={`${import.meta.env.BASE_URL}${instrument === 'guitar' ? 'ardilla-guitarra.webp' : 'ardilla-bateria.webp'}`}
         alt=""
         draggable={false}
         className="pointer-events-none absolute top-[1%] left-1/2 h-[98%] max-w-none -translate-x-1/2 origin-bottom select-none"
@@ -693,7 +929,7 @@ export function FretboardHighway({ instrument, tab, drumNotes, midi, getTime, pl
       <div className="absolute top-2 right-3 flex items-center gap-2 text-xs font-semibold">
         {practice && (
           <span className="rounded-md border border-green-400/40 bg-[#050912]/80 px-2 py-1 tabular-nums text-green-300">
-            {score.hits}/{total} · racha {score.streak}
+            {score.points} pts · {score.hits}/{total} · racha {score.streak}
           </span>
         )}
         <button

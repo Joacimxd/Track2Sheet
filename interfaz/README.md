@@ -64,7 +64,7 @@ Otra carpeta: `TRACK2SHEET_OUTPUT=/ruta npm run dev`.
 
 ```
 server/outputApi.ts               middleware de Vite que lee output/
-scripts/make_stage_bg.py          recorta el fondo blanco de la ardilla → public/ardilla-stage.webp
+scripts/make_stage_bg.py          recorta el fondo blanco de las ardillas → public/ardilla-guitarra.webp y public/ardilla-bateria.webp
 src/hooks/useMultiTrackPlayer.ts  estado: canciones, instrumento, mute/solo/volumen, transporte, YouTube
 src/utils/audioEngine.ts          Tone.js: 6 stems (audio o synth) en un único reloj maestro
 src/utils/midiParser.ts           @tonejs/midi → notas, BPM, compases

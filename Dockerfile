@@ -7,7 +7,10 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt /tmp/requirements.txt
-RUN pip install --no-cache-dir -r /tmp/requirements.txt
+# Long timeout/retries and a cache mount so a slow connection resumes instead of restarting
+# the multi-GB torch/CUDA downloads.
+ENV PIP_DEFAULT_TIMEOUT=600 PIP_RETRIES=15
+RUN --mount=type=cache,target=/root/.cache/pip pip install -r /tmp/requirements.txt
 # audio-separator imports audioread but doesn't declare it as a dependency
 RUN pip install --no-cache-dir audioread
 
