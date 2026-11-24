@@ -1,0 +1,4 @@
+basic-pitch[onnx]
+python-dotenv
+jupyterlab
+matplotlib

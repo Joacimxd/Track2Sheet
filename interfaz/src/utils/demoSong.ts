@@ -151,7 +151,7 @@ function other() {
 
 const toRef = (name: string, midi: Midi) => ({ name, data: midi.toArray().slice().buffer as ArrayBuffer })
 
-export function createDemoSong(id = 'demo', title = 'Demo — Neon Highway'): SongSource {
+export function createDemoSong(id = 'demo', title = 'Neon Highway'): SongSource {
   const synth: Record<StemId, { name: string; data: ArrayBuffer }> = {
     bass: toRef('bass.mid', bass()),
     drums: toRef('drums.mid', drums()),

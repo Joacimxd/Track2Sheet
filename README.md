@@ -14,6 +14,7 @@ docker-compose.gpu.yml  optional NVIDIA GPU override
 requirements.txt
 notebooks/
   track2stems.ipynb     1. download  2. separate into stems
+  stem2midi.ipynb       guitar stem -> MIDI with Spotify Basic Pitch + piano-roll plots
 docs/
   process.txt           research notes
   boceto_interfaz.jpeg  UI mockup for the web interface
@@ -33,6 +34,18 @@ docker compose up --build
 ```
 
 Open `http://localhost:8888/?token=<JUPYTER_TOKEN>`. The notebook opens automatically.
+
+## Stem → MIDI (Spotify Basic Pitch)
+
+Basic Pitch needs Python ≤ 3.11, so it runs in its own image (`Dockerfile.basicpitch`):
+
+```bash
+docker compose up --build basicpitch
+```
+
+Open `http://localhost:8889/?token=<JUPYTER_TOKEN>`; `notebooks/stem2midi.ipynb` opens automatically.
+It transcribes `docs/stems/audio [music].mp3` (the stem that contains the guitar) to
+`output/midi/<song>/guitar.mid` and draws it as a piano roll.
 
 ## Web interface
 
@@ -66,5 +79,6 @@ The notebook's setup cell prints which device it is using. Without a GPU it runs
 | `STEM_FORMAT` | `WAV`, `FLAC` or `MP3` |
 | `YTDLP_COOKIES` | optional cookies file for yt-dlp, if YouTube asks you to sign in |
 | `JUPYTER_PORT`, `JUPYTER_TOKEN` | where JupyterLab listens and its login token |
+| `BASICPITCH_PORT` | port of the Basic Pitch notebook (default 8889) |
 | `HOST_UID`, `HOST_GID` | your user/group id, so files in `output/` belong to you |
 | `COMPOSE_FILE` | add `docker-compose.gpu.yml` to use the GPU |

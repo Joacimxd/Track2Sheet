@@ -6,7 +6,7 @@ import type { MidiNote } from '../types'
 export const TUNING = [40, 45, 50, 55, 59, 64]
 export const STRING_NAMES = ['E', 'A', 'D', 'G', 'B', 'e']
 /** Rocksmith colour code: red, yellow, blue, orange, green, purple. */
-export const STRING_COLORS = ['#ff3b46', '#ffd23f', '#3fa2ff', '#ff9a2e', '#3ee07a', '#b46bff']
+export const STRING_COLORS = ['#e0503a', '#f0b429', '#3f8fd2', '#e8843a', '#4fb286', '#d65aa0']
 /** Keyboard keys for strings 0-5 (low E … high e). */
 export const STRING_KEYS = ['A', 'S', 'D', 'F', 'G', 'H']
 export const MAX_FRET = 22
@@ -166,14 +166,14 @@ export interface DrumLane {
 
 /** Pads left→right as seen from the drum throne. The kick is a full-width bar (lane `KICK_LANE`). */
 export const DRUM_LANES: DrumLane[] = [
-  { label: 'Hi-Hat', color: '#ffd23f', key: 'A' },
-  { label: 'Tarola', color: '#ff3b46', key: 'S' },
-  { label: 'Tom alto', color: '#3fa2ff', key: 'D' },
-  { label: 'Tom piso', color: '#3ee07a', key: 'F' },
-  { label: 'Platillos', color: '#b46bff', key: 'G' },
+  { label: 'Hi-Hat', color: '#f0b429', key: 'A' },
+  { label: 'Tarola', color: '#e0503a', key: 'S' },
+  { label: 'Tom alto', color: '#3f8fd2', key: 'D' },
+  { label: 'Tom piso', color: '#4fb286', key: 'F' },
+  { label: 'Platillos', color: '#d65aa0', key: 'G' },
 ]
 export const KICK_LANE = 5
-export const KICK = { label: 'Bombo', color: '#ff9a2e', key: 'J' }
+export const KICK = { label: 'Bombo', color: '#e8843a', key: 'J' }
 
 export interface DrumNote extends MidiNote {
   id: number

@@ -147,10 +147,6 @@ export function useMultiTrackPlayer() {
 
   const toggleMute = useCallback((id: StemId) => setUserMuted((m) => ({ ...m, [id]: !m[id] })), [])
 
-  const setMutedMany = useCallback((ids: StemId[], value: boolean) => {
-    setUserMuted((m) => ({ ...m, ...Object.fromEntries(ids.map((id) => [id, value])) }))
-  }, [])
-
   const setVolume = useCallback((id: StemId, v: number) => setVolumeState((m) => ({ ...m, [id]: v })), [])
 
   /** Listen to one stem alone (stays in sync); starts playback if paused. */
@@ -234,7 +230,6 @@ export function useMultiTrackPlayer() {
     solo,
     volume,
     toggleMute,
-    setMutedMany,
     setVolume,
     toggleSolo,
     playing,

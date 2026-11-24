@@ -12,6 +12,26 @@ export const STEM_LABEL: Record<StemId, string> = {
   vocals: 'Voces',
 }
 
+/** Lighting-gel colour of each stem (matches the --color-gel-* tokens in index.css). */
+export const STEM_GEL: Record<StemId, string> = {
+  bass: '#3f8fd2',
+  drums: '#e0503a',
+  guitar: '#f0b429',
+  other: '#9a9fb0',
+  piano: '#4fb286',
+  vocals: '#d65aa0',
+}
+
+/** Short label printed on each gel swatch. */
+export const STEM_SHORT: Record<StemId, string> = {
+  bass: 'BAJ',
+  drums: 'BAT',
+  guitar: 'GTR',
+  other: 'OTR',
+  piano: 'PNO',
+  vocals: 'VOZ',
+}
+
 /** Instruments the user can practise; each one has its own transcribed .mid. */
 export type InstrumentId = 'guitar' | 'drums'
 
@@ -21,9 +41,6 @@ export const INSTRUMENT_LABEL: Record<InstrumentId, string> = {
   guitar: 'Guitarra',
   drums: 'Batería',
 }
-
-/** Stems that always accompany the player (shown together as "Voces / Otros"). */
-export const BACKING_STEMS: StemId[] = ['bass', 'other', 'piano', 'vocals']
 
 export interface MidiNote {
   /** Onset in seconds. */
