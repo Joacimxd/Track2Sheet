@@ -101,19 +101,41 @@ const VOICES: Record<StemId, (out: Tone.InputNode) => Voice> = {
   vocals: vocalVoice,
 }
 
+/** Reference tempo of the transport at 1x; the speed control scales it. */
+const BASE_BPM = 120
+/** Fine tick resolution so the song position (derived from ticks) moves smoothly. */
+const PPQ = 960
+
+export const MIN_RATE = 0.5
+export const MAX_RATE = 1.5
+
+/** A decoded stem: a Player for 1x (full quality) and a GrainPlayer for other speeds (keeps pitch). */
+interface AudioStem {
+  player: Tone.Player
+  grain: Tone.GrainPlayer
+}
+
 /**
- * Plays the 6 stems of a song on the Tone.js transport, which is the single master clock for
- * audio *and* the canvas. Every stem is a Player (decoded audio) or a synth (MIDI) synced to the
- * transport and routed through its own Channel (mute + volume) with an analyser for the meters,
- * so all stems start, pause and seek sample-accurately together.
+ * Plays the 6 stems of a song against the Tone.js transport, which is the single master clock for
+ * audio *and* the canvas. Synth stems are Parts on the transport; decoded stems are started and
+ * stopped together with it. Every stem goes through its own Channel (mute + volume) with an
+ * analyser for the meters.
+ *
+ * Speed: the song position is derived from transport *ticks* at BASE_BPM, so scaling the
+ * transport tempo slows the clock, the synths and the highway together, while decoded audio
+ * switches to a pitch-preserving GrainPlayer at the same rate.
  */
 export class AudioEngine {
   readonly channels: Record<StemId, Tone.Channel>
   readonly analysers: Record<StemId, Tone.Analyser>
   private disposables: { dispose(): unknown }[] = []
+  private audio: AudioStem[] = []
+  private _rate = 1
 
   constructor() {
     Tone.getContext().lookAhead = 0.05
+    this.transport.PPQ = PPQ
+    this.transport.bpm.value = BASE_BPM
     this.channels = {} as Record<StemId, Tone.Channel>
     this.analysers = {} as Record<StemId, Tone.Analyser>
     for (const id of STEM_IDS) {
@@ -128,25 +150,41 @@ export class AudioEngine {
     return Tone.getTransport()
   }
 
+  get rate() {
+    return this._rate
+  }
+
   decode = (data: ArrayBuffer) => Tone.getContext().decodeAudioData(data)
 
   load(song: LoadedSong) {
     this.stop()
     this.disposables.forEach((d) => d.dispose())
     this.disposables = []
+    this.audio = []
+    // Part times (seconds) are converted to ticks at the current tempo: build them at 1x.
+    this.transport.bpm.cancelScheduledValues(0)
+    this.transport.bpm.value = BASE_BPM
     for (const id of STEM_IDS) {
       const stem = song.stems[id]
       if (stem?.buffer) {
-        const player = new Tone.Player(new Tone.ToneAudioBuffer(stem.buffer)).connect(this.channels[id])
-        player.sync().start(0)
-        this.disposables.push(player)
+        const buffer = new Tone.ToneAudioBuffer(stem.buffer)
+        const player = new Tone.Player(buffer).connect(this.channels[id])
+        // Short grains keep slowed audio within ~0.1 s of the highway at 50% (~0.03 s at 75%);
+        // Tone's default 0.2 s grains let sounds arrive up to 0.3 s early.
+        const grain = new Tone.GrainPlayer({ url: buffer, grainSize: 0.08, overlap: 0.04 }).connect(this.channels[id])
+        this.audio.push({ player, grain })
+        this.disposables.push(player, grain)
       } else if (stem?.synth?.notes.length) {
         const voice = VOICES[id](this.channels[id])
-        const part = new Tone.Part<MidiNote>((time, note) => voice.play(note, time), stem.synth.notes)
+        const part = new Tone.Part<MidiNote>(
+          (time, note) => voice.play(this._rate === 1 ? note : { ...note, duration: note.duration / this._rate }, time),
+          stem.synth.notes,
+        )
         part.start(0)
         this.disposables.push(part, voice)
       }
     }
+    this.transport.bpm.value = BASE_BPM * this._rate
   }
 
   /** `volume` is linear 0…1. */
@@ -156,32 +194,86 @@ export class AudioEngine {
     this.channels[id].volume.value = muted || volume <= 0.001 ? -Infinity : Tone.gainToDb(volume)
   }
 
-  /** Audible position in seconds (transport time minus the scheduling look-ahead). */
+  private songSeconds(ticks: number) {
+    return (ticks / PPQ) * (60 / BASE_BPM)
+  }
+
+  /** Audible song position in seconds (independent of the speed). */
   getTime(): number {
     const t = this.transport
-    if (t.state !== 'started') return t.seconds
-    return Math.max(0, t.seconds - Tone.getContext().lookAhead)
+    const ticks = t.state === 'started' ? t.getTicksAtTime(Tone.getContext().currentTime) : t.ticks
+    return Math.max(0, this.songSeconds(ticks))
   }
 
   get playing() {
     return this.transport.state === 'started'
   }
 
+  /**
+   * Start the decoded stems at context time `time` from song position `offset` (default: where the
+   * transport is at `time`). Callers that just moved the transport must pass `offset` explicitly:
+   * Tone applies a position change a fraction of a tick later, so asking the transport right away
+   * returns the *old* position and the audio would keep playing from there.
+   */
+  private startAudio(time: number, offset = this.songSeconds(this.transport.getTicksAtTime(time))) {
+    for (const a of this.audio) {
+      if (offset >= a.player.buffer.duration) continue
+      if (this._rate === 1) {
+        a.player.start(time, offset)
+      } else {
+        a.grain.playbackRate = this._rate
+        // Tone 15's GrainPlayer starts at `offset × playbackRate` (its clock runs at
+        // rate / grainSize but start() converts the offset with grainSize alone), so pre-divide.
+        a.grain.start(time, offset / this._rate)
+      }
+    }
+  }
+
+  private stopAudio(time: number) {
+    for (const a of this.audio) {
+      a.player.stop(time)
+      a.grain.stop(time)
+    }
+  }
+
   async play() {
     await Tone.start()
-    this.transport.start()
+    const t = Tone.now()
+    this.transport.start(t)
+    this.startAudio(t)
   }
 
   pause() {
-    this.transport.pause()
+    const t = Tone.now()
+    this.transport.pause(t)
+    this.stopAudio(t)
   }
 
   stop() {
     this.transport.stop()
-    this.transport.seconds = 0
+    this.stopAudio(Tone.now())
+    this.transport.ticks = 0
   }
 
   seek(seconds: number) {
-    this.transport.seconds = Math.max(0, seconds)
+    const s = Math.max(0, seconds)
+    this.transport.ticks = Math.round((s * BASE_BPM * PPQ) / 60)
+    if (this.playing) {
+      const t = Tone.now()
+      this.stopAudio(t)
+      this.startAudio(t, s)
+    }
+  }
+
+  /** Playback speed for every track (1 = original). Pitch is kept. */
+  setRate(rate: number) {
+    const r = Math.min(MAX_RATE, Math.max(MIN_RATE, Math.round(rate * 100) / 100))
+    if (r === this._rate) return
+    const t = Tone.now()
+    const at = this.songSeconds(this.transport.getTicksAtTime(t)) // before the tempo changes
+    if (this.playing) this.stopAudio(t)
+    this._rate = r
+    this.transport.bpm.setValueAtTime(BASE_BPM * r, t)
+    if (this.playing) this.startAudio(t, at)
   }
 }
