@@ -190,7 +190,7 @@ export function FretboardHighway({ instrument, tab, drumNotes, midi, getTime, pl
     if (Math.abs(now - prevNow) > 0.3) f.snapCam = true
     ctx.clearRect(0, 0, w, h)
 
-    // Drum squirrel "breathes" on the beat.
+    // Squirrel "breathes" on the beat.
     if (imgRef.current) {
       let pulse = 0
       const beats = midi?.beatTimes
@@ -566,42 +566,74 @@ export function FretboardHighway({ instrument, tab, drumNotes, midi, getTime, pl
       const laneColor = (lane: number) => (lane === KICK_LANE ? KICK.color : DRUM_LANES[lane].color)
       const kickGlow = Math.max(f.glow[KICK_LANE], f.keyFlash[KICK_LANE] * 0.6)
 
-      // Highway floor + lanes.
-      floorQuad(left, right, hitY, 0, 1.05)
-      ctx.fillStyle = 'rgba(14,15,18,0.42)'
+      // Same geometry as the guitar: notes ride a plane just above the floor,
+      // with a stem + floor shadow showing depth.
+      const noteH = h * 0.035 * 0.82
+      const floorY = hitY + h * 0.04
+      const noteW = Math.min(laneW * 0.66, 90)
+
+      // Lanes used in the next ~1.4 s get the same highlight as active frets.
+      const active = new Set<number>()
+      for (let i = lowerBound(notes, now - 0.05); i < notes.length && notes[i].time < now + 1.4; i++) active.add(notes[i].lane)
+
+      // Floor: lanes receding to the vanishing point.
+      floorQuad(left, right, floorY, 0, 1.05)
+      ctx.fillStyle = 'rgba(14,15,18,0.28)'
       ctx.fill()
-      DRUM_LANES.forEach((lane, i) => {
-        floorQuad(left + i * laneW, left + (i + 1) * laneW, hitY, 0, 1.05)
-        ctx.fillStyle = rgba(lane.color, 0.05 + f.glow[i] * 0.14)
+      DRUM_LANES.forEach((_, i) => {
+        if (!active.has(i)) return
+        floorQuad(left + i * laneW, left + (i + 1) * laneW, floorY, 0, 1.05)
+        const g = ctx.createLinearGradient(0, floorY, 0, vy + (floorY - vy) / (1 + DEPTH))
+        g.addColorStop(0, 'rgba(242,239,233,0.07)')
+        g.addColorStop(1, 'rgba(242,239,233,0)')
+        ctx.fillStyle = g
         ctx.fill()
       })
       for (let i = 0; i <= DRUM_LANES.length; i++) {
-        const a = proj(left + i * laneW, hitY, 0)
-        const b = proj(left + i * laneW, hitY, 1.05)
-        ctx.strokeStyle = i === 0 || i === DRUM_LANES.length ? 'rgba(242,239,233,0.32)' : 'rgba(242,239,233,0.14)'
+        const a = proj(left + i * laneW, floorY, 0)
+        const b = proj(left + i * laneW, floorY, 1.05)
+        ctx.strokeStyle = active.has(i) || active.has(i - 1) ? 'rgba(242,239,233,0.45)' : 'rgba(242,239,233,0.16)'
         ctx.lineWidth = 1.2
         line(a.x, a.y, b.x, b.y)
       }
-      beatLines(left, right, hitY)
+      beatLines(left, right, floorY)
 
-      // Notes, far → near (same flat gel blocks as the guitar).
+      // Notes, far → near: same flat gel blocks, stems and floor shadows as the guitar.
       const start = lowerBound(notes, now - 0.2)
       const end = lowerBound(notes, now + LOOK_AHEAD * 1.05)
       for (let i = end - 1; i >= start; i--) {
         const n = notes[i]
-        if (n.time < now - 0.1) continue
+        if (n.time < now - 0.12) continue
         if (practiceRef.current && f.judged.get(n.id) === 'miss') continue
         const d = Math.max(0, depthOf(n.time))
-        const alpha = n.time < now ? Math.max(0, 1 - (now - n.time) / 0.1) : 1
-        const near = Math.abs(n.time - now) < 0.06
+        const past = n.time < now
+        const alpha = past ? Math.max(0, 1 - (now - n.time) / 0.12) : 1
+        const near = Math.abs(n.time - now) < 0.07
+        const color = laneColor(n.lane)
         if (n.lane === KICK_LANE) {
-          const a = proj(left + 8, hitY, d)
-          const b = proj(right - 8, hitY, d)
-          block((a.x + b.x) / 2, a.y, b.x - a.x, Math.max(3, laneW * 0.06 * a.p), KICK.color, { alpha: alpha * 0.9, glow: near })
-        } else {
-          const p = proj(laneX(n.lane), hitY, d)
-          block(p.x, p.y, laneW * 0.66 * p.p, Math.max(4, laneW * 0.13 * p.p), DRUM_LANES[n.lane].color, { alpha, glow: near })
+          // Kick: a bar across all lanes, like an open string.
+          const a = proj(left + 6, hitY, d)
+          const b = proj(right - 6, hitY, d)
+          block((a.x + b.x) / 2, a.y, b.x - a.x, noteH * 0.6 * a.p, color, { alpha, glow: near })
+          continue
         }
+        const x = laneX(n.lane)
+        const p = proj(x, hitY, d)
+        if (!past) {
+          const fl = proj(x, floorY, d)
+          ctx.strokeStyle = 'rgba(255,255,255,0.32)'
+          ctx.lineWidth = Math.max(1, 2 * p.p)
+          line(p.x, p.y + noteH * 0.5 * p.p, fl.x, fl.y)
+          ctx.fillStyle = rgba(color, 0.35)
+          ctx.beginPath()
+          ctx.ellipse(fl.x, fl.y, noteW * 0.38 * p.p, 3 * p.p + 1, 0, 0, Math.PI * 2)
+          ctx.fill()
+        }
+        block(p.x, p.y, noteW * p.p, noteH * p.p, color, {
+          label: practiceRef.current ? DRUM_LANES[n.lane].key : undefined,
+          alpha,
+          glow: near,
+        })
       }
 
       // Hit line: ink rail (kick flashes it orange) with a gel target per lane.
@@ -610,8 +642,8 @@ export function FretboardHighway({ instrument, tab, drumNotes, midi, getTime, pl
       line(left, hitY, right, hitY)
       DRUM_LANES.forEach((lane, i) => {
         const g = Math.max(f.glow[i], f.keyFlash[i] * 0.6)
-        const tw = laneW * 0.7
-        const th = Math.max(6, laneW * 0.13)
+        const tw = noteW * 1.1
+        const th = noteH * 1.15
         ctx.strokeStyle = g > 0.05 ? shade(lane.color, 0.45 * g) : rgba(lane.color, 0.7)
         ctx.fillStyle = rgba(lane.color, 0.06 + g * 0.4)
         ctx.lineWidth = 2 + g * 2
@@ -630,7 +662,7 @@ export function FretboardHighway({ instrument, tab, drumNotes, midi, getTime, pl
       stage.addColorStop(0.25, 'rgba(14,15,18,0.86)')
       stage.addColorStop(1, 'rgba(14,15,18,0.95)')
       ctx.fillStyle = stage
-      ctx.fillRect(0, hitY + 4, w, h - hitY - 4)
+      ctx.fillRect(0, floorY, w, h - floorY)
       const labelSize = Math.min(20, h * 0.032)
       const label = (text: string, key: string, color: string, x: number, y: number) => {
         ctx.font = `600 ${labelSize}px "Barlow Condensed", sans-serif`
@@ -837,19 +869,17 @@ export function FretboardHighway({ instrument, tab, drumNotes, midi, getTime, pl
 
   return (
     <div className="relative min-h-0 flex-1 overflow-hidden bg-stage">
-      {instrument === 'drums' && (
-        <>
-          <img
-            ref={imgRef}
-            src={`${import.meta.env.BASE_URL}ardilla-bateria.webp`}
-            alt=""
-            draggable={false}
-            className="pointer-events-none absolute top-[1%] left-1/2 h-[98%] max-w-none -translate-x-1/2 origin-bottom select-none"
-            style={{ filter: 'brightness(0.5) saturate(0.8)', opacity: 0.85 }}
-          />
-          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_50%_45%,transparent_40%,var(--color-stage)_100%)]" />
-        </>
-      )}
+      {/* Squirrel per instrument, dimmed and vignetted into the stage */}
+      <img
+        ref={imgRef}
+        src={`${import.meta.env.BASE_URL}${instrument === 'guitar' ? 'ardilla-guitarra.webp' : 'ardilla-bateria.webp'}`}
+        alt=""
+        draggable={false}
+        className="pointer-events-none absolute top-[1%] left-1/2 h-[98%] max-w-none -translate-x-1/2 origin-bottom select-none"
+        style={{ filter: 'brightness(0.5) saturate(0.8)', opacity: 0.85 }}
+      />
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_50%_45%,transparent_40%,var(--color-stage)_100%)]" />
+
       <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" />
 
       <div className="absolute top-2 right-3 flex items-center gap-2 text-xs font-semibold">

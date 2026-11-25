@@ -16,7 +16,7 @@ interface Props {
   instrument: InstrumentId
   muted: Record<StemId, boolean>
   userMuted: Record<StemId, boolean>
-  solo: StemId | null
+  solo: Record<StemId, boolean>
   volume: Record<StemId, number>
   analysers: Record<StemId, Tone.Analyser>
   playing: boolean
@@ -71,7 +71,7 @@ export function RightPanel(p: Props) {
               practising={id === p.instrument}
               muted={p.muted[id]}
               userMuted={p.userMuted[id]}
-              soloed={p.solo === id}
+              soloed={p.solo[id]}
               volume={p.volume[id]}
               analyser={p.analysers[id]}
               playing={p.playing}
@@ -111,8 +111,8 @@ function TrackRow(r: RowProps) {
   const isInstrument = r.id === 'guitar' || r.id === 'drums'
   const gel = STEM_GEL[r.id]
   const lit = !r.muted && !!r.stem
-  // The mute button shows the user's choice; the practised track is always muted (you play it).
-  const muteOn = r.practising || r.userMuted
+  // The practised track starts muted (you play it) but can be unmuted to play along with it.
+  const muteOn = r.userMuted
 
   const btn = 'flex h-8 w-8 shrink-0 items-center justify-center rounded-md transition active:scale-95 disabled:cursor-not-allowed disabled:active:scale-100'
 
@@ -144,10 +144,10 @@ function TrackRow(r: RowProps) {
 
         <button
           onClick={r.onToggleMute}
-          disabled={r.practising || !r.stem}
+          disabled={!r.stem}
           aria-pressed={muteOn}
           aria-label={`Silenciar ${STEM_LABEL[r.id]}`}
-          title={r.practising ? 'Silenciada: la tocas tú' : r.userMuted ? 'Activar pista' : 'Silenciar pista'}
+          title={r.userMuted ? (r.practising ? 'Silenciada: la tocas tú · clic para oírla' : 'Activar pista') : 'Silenciar pista'}
           className={`${btn} ${muteOn ? 'bg-alert/20 text-alert' : 'bg-control text-ink-2 hover:bg-[#2e3037] hover:text-ink'}`}
         >
           {muteOn ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
@@ -157,7 +157,7 @@ function TrackRow(r: RowProps) {
           disabled={!r.stem}
           aria-pressed={r.soloed}
           aria-label={`Solo ${STEM_LABEL[r.id]}`}
-          title={r.soloed ? 'Quitar solo' : 'Solo: escuchar solo esta pista'}
+          title={r.soloed ? 'Quitar solo' : 'Solo: escuchar esta pista (puedes combinar varias)'}
           className={`${btn} ${r.soloed ? 'bg-ink text-stage' : 'bg-control text-ink-2 hover:bg-[#2e3037] hover:text-ink'}`}
         >
           <Headphones className="h-4 w-4" />

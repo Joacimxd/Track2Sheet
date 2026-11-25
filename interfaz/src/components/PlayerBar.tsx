@@ -120,7 +120,7 @@ export function PlayerBar(p: Props) {
                 role="radio"
                 aria-checked={selected}
                 onClick={() => p.onSelectInstrument(id)}
-                title={p.hasMidi[id] ? `Practicar ${INSTRUMENT_LABEL[id].toLowerCase()} (su pista se silencia)` : `${INSTRUMENT_LABEL[id]}: sin .mid cargado`}
+                title={p.hasMidi[id] ? `Practicar ${INSTRUMENT_LABEL[id].toLowerCase()} (su pista empieza silenciada)` : `${INSTRUMENT_LABEL[id]}: sin .mid cargado`}
                 style={selected ? { backgroundColor: STEM_GEL[id] } : undefined}
                 className={`h-8 rounded px-3.5 text-sm font-semibold transition-colors duration-200 ${
                   selected ? 'text-[#111214]' : 'text-ink-2 hover:text-ink'

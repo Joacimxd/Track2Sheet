@@ -1,5 +1,6 @@
 import { Midi } from '@tonejs/midi'
 import type { SongSource, StemId } from '../types'
+import { DRUM_LOOP } from './drumLoop'
 
 // A short rock tune (Em – C – G – D at 112 BPM, ~56 s) written as real .mid bytes, one file per
 // stem, so the demo goes through exactly the same parser / mapper / synth path as a real song.
@@ -72,31 +73,23 @@ function guitar() {
   return midi
 }
 
+/**
+ * Drums: an Ableton Live Core Library loop ("Backbeat Busy", converted by scripts/alc_to_mid.py),
+ * played at the song's tempo and repeated up to the outro, which ends on kick + crash.
+ */
 function drums() {
   const { midi, add } = newTrack('Batería', 9)
-  const hit = (n: number, bar: number, at: number, v = 0.85) => add(n, bar, at, 0.25, v)
-  FORM.forEach((section, bar) => {
-    const start = bar === 0 || FORM[bar - 1] !== section
-    const fill = FORM[bar + 1] !== undefined && FORM[bar + 1] !== section
-    if (start && section !== 'intro') hit(49, bar, 0, 1)
-    if (section === 'intro') {
-      for (let b = 0; b < 4; b++) hit(42, bar, b, 0.6)
-      hit(36, bar, 0)
-      if (bar % 2 === 1) hit(38, bar, 3, 0.6)
-    } else if (section === 'outro') {
-      hit(36, bar, 0)
-      hit(49, bar, 0, 1)
-    } else {
-      const hats = section === 'chorus' ? 51 : 42
-      for (let e = 0; e < 8; e++) if (!(fill && e >= 4)) hit(hats, bar, e * 0.5, e % 2 ? 0.55 : 0.75)
-      hit(36, bar, 0)
-      hit(36, bar, 2.5)
-      if (section === 'chorus') hit(36, bar, 2)
-      hit(38, bar, 1)
-      if (fill) [48, 48, 47, 47, 45, 45, 43, 43].forEach((t, i) => hit(t, bar, 2 + i * 0.25, 0.8))
-      else hit(38, bar, 3)
+  const outro = FORM.indexOf('outro')
+  const loopEnd = outro * 4
+  for (let r = 0; r * DRUM_LOOP.beats < loopEnd; r++)
+    for (const [at, key, len, velocity] of DRUM_LOOP.notes) {
+      const t = r * DRUM_LOOP.beats + at
+      if (t < loopEnd) add(key, 0, t, len, velocity)
     }
-  })
+  for (let bar = outro; bar < FORM.length; bar++) {
+    add(36, bar, 0, 0.25, 0.85)
+    add(49, bar, 0, 0.25, 1)
+  }
   return midi
 }
 

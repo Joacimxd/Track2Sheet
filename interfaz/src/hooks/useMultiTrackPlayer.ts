@@ -18,7 +18,7 @@ export interface YoutubeState {
 
 /**
  * Multi-track player: 6 stems on one master clock (the Tone.js transport, read every animation
- * frame), the instrument being practised (its stem is always muted), per-stem mute / solo / volume,
+ * frame), the instrument being practised (its stem starts muted, toggleable), per-stem mute / solo / volume,
  * song library (demo, `output/`, local files, YouTube) and the .mid → highway mapping.
  */
 export function useMultiTrackPlayer() {
@@ -30,9 +30,11 @@ export function useMultiTrackPlayer() {
   const [loading, setLoading] = useState<string | null>('Preparando demo…')
   const [error, setError] = useState<string | null>(null)
   const [instrument, setInstrument] = useState<InstrumentId>('guitar')
-  const [userMuted, setUserMuted] = useState(() => allStems(false))
+  // The practised instrument starts muted (you play it), but every track can be toggled freely.
+  const [userMuted, setUserMuted] = useState(() => ({ ...allStems(false), guitar: true }))
   const [volume, setVolumeState] = useState(() => allStems(0.85))
-  const [solo, setSolo] = useState<StemId | null>(null)
+  // Per-track solo (DAW style): any number of tracks can be soloed together.
+  const [solo, setSolo] = useState(() => allStems(false))
   const [playing, setPlaying] = useState(false)
   const [time, setTime] = useState(0)
   const [youtube, setYoutube] = useState<YoutubeState>({ status: 'idle' })
@@ -77,12 +79,14 @@ export function useMultiTrackPlayer() {
       })
   }, [currentSource, engine])
 
-  // Routing rule: the practised instrument is muted; solo overrides everything (to hear a stem alone).
+  // Routing rule: each track follows its mute toggle; while any track is soloed, only the soloed
+  // tracks sound (solo wins over mute, as in a DAW).
   const muted = useMemo(() => {
     const m = allStems(false)
-    for (const id of STEM_IDS) m[id] = solo ? id !== solo : id === instrument || userMuted[id]
+    const anySolo = STEM_IDS.some((id) => solo[id])
+    for (const id of STEM_IDS) m[id] = anySolo ? !solo[id] : userMuted[id]
     return m
-  }, [instrument, userMuted, solo])
+  }, [userMuted, solo])
 
   useEffect(() => {
     for (const id of STEM_IDS) engine.setMix(id, muted[id], volume[id])
@@ -140,20 +144,21 @@ export function useMultiTrackPlayer() {
 
   const selectInstrument = useCallback((id: InstrumentId) => {
     setInstrument(id)
-    // The other instrument goes back to the mix: guitar → drums muted & guitar audible, and vice versa.
-    setUserMuted((m) => ({ ...m, guitar: false, drums: false }))
-    setSolo(null)
+    // Switching instrument mutes the new one (you play it) and brings the other back into the mix;
+    // either can still be toggled afterwards.
+    setUserMuted((m) => ({ ...m, guitar: id === 'guitar', drums: id === 'drums' }))
+    setSolo(allStems(false))
   }, [])
 
   const toggleMute = useCallback((id: StemId) => setUserMuted((m) => ({ ...m, [id]: !m[id] })), [])
 
   const setVolume = useCallback((id: StemId, v: number) => setVolumeState((m) => ({ ...m, [id]: v })), [])
 
-  /** Listen to one stem alone (stays in sync); starts playback if paused. */
+  /** Toggle a track's solo; several can be soloed together. Soloing starts playback if paused. */
   const toggleSolo = useCallback(
     (id: StemId) => {
-      setSolo((s) => (s === id ? null : id))
-      if (solo !== id && !engine.playing) void play()
+      setSolo((s) => ({ ...s, [id]: !s[id] }))
+      if (!solo[id] && !engine.playing) void play()
     },
     [solo, engine, play],
   )
