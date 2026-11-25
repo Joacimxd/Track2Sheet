@@ -79,7 +79,7 @@ async function simulate(videoId: string, onStep: (s: PipelineStep) => void, sign
       onStep({ label: PIPELINE_STEPS[i], progress: done / total })
     }
   }
-  return createDemoSong(`youtube:${videoId}`, `YouTube · ${videoId} (simulado)`)
+  return createDemoSong(`youtube:${videoId}`, `${videoId} (simulado)`)
 }
 
 export async function processYoutube(url: string, onStep: (s: PipelineStep) => void, signal?: AbortSignal): Promise<SongSource> {

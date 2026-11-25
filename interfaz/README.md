@@ -5,7 +5,7 @@ pipeline: un link de YouTube → **6 stems** (`bass`, `drums`, `guitar`, `other`
 un **`.mid`** de la guitarra o la batería. Diseño de referencia: [`public/boceto_v2.jpeg`](public/boceto_v2.jpeg).
 
 - Eliges **Guitarra** o **Batería**: el stem de ese instrumento se silencia (`MUTED`), el resto suena
-  y las notas de su `.mid` llegan por un **diapasón 3D estilo Rocksmith** (6 cuerdas por color,
+  y las notas de su `.mid` llegan por un **diapasón 3D** (6 cuerdas por color,
   trastes, sustains, acordes, notas muertas con `X`) o por **carriles de batería** (hi-hat, tarola,
   toms, platillos y bombo).
 - Al abrir la app se carga una **canción demo** (6 stems sintetizados con Tone.js a partir de MIDI
@@ -40,9 +40,9 @@ npm run preview      # sirve dist/ (con la API de output/ incluida)
 
 ## Cargar archivos
 
-- Botón **Cargar** de ARCHIVOS (o arrastrar a la ventana): los archivos se asignan por nombre
+- Botón **Cargar archivos** de PISTAS (o arrastrar a la ventana): los archivos se asignan por nombre
   (`bass/bajo`, `drums/batería`, `guitar/guitarra`, `piano`, `vocals/voz`, `other/otros`).
-- Menú `⋮` de cada stem: volumen, cargar el audio de ese stem y, en `guitar`/`drums`, su `.mid`.
+- Menú `⋮` de cada pista: cargar el audio de ese stem y, en `guitar`/`drums`, su `.mid`.
 - Un `.mid` solo reemplaza las notas de la canción actual; un audio crea (o completa) una canción local.
 
 También se leen las canciones ya procesadas en `../output` (servidor de Vite):
@@ -53,11 +53,10 @@ Otra carpeta: `TRACK2SHEET_OUTPUT=/ruta npm run dev`.
 
 | Control | Acción |
 |---|---|
-| ▶ / `Espacio` | Play: todos los stems a la vez, con el instrumento elegido silenciado |
-| ⏸ | Pausa todo y congela la autopista en el punto exacto |
-| ⏮ | Detiene y regresa los 6 stems y el `.mid` a 00:00 |
-| ▶ de cada stem | Solo: escuchar ese stem sincronizado (sirve para oír la guitarra/batería original) |
-| 🔊 de cada stem | Silenciar / activar |
+| Barra superior | ▶/⏸ (`Espacio`), ⏮ (volver a 00:00), barra de posición (clic/arrastrar, `←`/`→` = ±5 s), canción y **Toco: Guitarra / Batería** |
+| 🔊 de cada pista | Silenciar / activar (la pista que tocas tú siempre está silenciada) |
+| 🎧 de cada pista | Solo: escuchar solo esa pista, sincronizada (sirve para oír la guitarra/batería original) |
+| Deslizador de cada pista | Volumen |
 | **Tocar con teclado** | Guitarra: `A S D F G H` = cuerdas E A D G B e. Batería: `A S D F G` = pads, `J` = bombo |
 
 ## Estructura
@@ -72,8 +71,8 @@ src/utils/midiToFretboard.ts      notas → (cuerda, traste) con digitación; no
 src/utils/pipelineApi.ts          puente con el backend (YouTube → stems + .mid), simulado por defecto
 src/utils/songLoader.ts           API / archivos locales → canción decodificada
 src/utils/demoSong.ts             canción demo: 6 .mid generados
-src/components/LeftPanel          instrumento a practicar + pistas activas con medidores
+src/components/PlayerBar          barra superior: transporte, posición, canción e instrumento
+src/components/FretboardHighway   canvas: diapasón 3D / carriles de batería
+src/components/RightPanel         link de YouTube + PISTAS (mute / solo / volumen / medidor por stem)
 src/components/YoutubeUrlBar      "Ingresar link de youtube" con progreso de las etapas
-src/components/FretboardHighway   canvas: diapasón 3D / batería sobre el escenario con la ardilla
-src/components/RightPanel         reloj, ARCHIVOS (6 stems) y controles de transporte
 ```

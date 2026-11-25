@@ -151,9 +151,9 @@ export class AudioEngine {
 
   /** `volume` is linear 0…1. */
   setMix(id: StemId, muted: boolean, volume: number) {
-    const ch = this.channels[id]
-    ch.mute = muted
-    ch.volume.value = volume <= 0.001 ? -Infinity : Tone.gainToDb(volume)
+    // Tone's `mute` works by setting the volume to -Infinity, so writing the volume afterwards
+    // silently un-muted the channel. Drive the gain directly instead.
+    this.channels[id].volume.value = muted || volume <= 0.001 ? -Infinity : Tone.gainToDb(volume)
   }
 
   /** Audible position in seconds (transport time minus the scheduling look-ahead). */

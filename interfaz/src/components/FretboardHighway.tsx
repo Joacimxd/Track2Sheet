@@ -203,8 +203,8 @@ export function FretboardHighway({ instrument, tab, drumNotes, midi, getTime, pl
 
     const vx = w / 2
     const vy = h * 0.07
-    const left = w * 0.045
-    const right = w * 0.955
+    const left = Math.max(w * 0.045, 34)
+    const right = w - left
     const proj = (x: number, y: number, d: number) => {
       const p = 1 / (1 + Math.max(d, -0.15) * DEPTH)
       return { x: vx + (x - vx) * p, y: vy + (y - vy) * p, p }
@@ -213,9 +213,9 @@ export function FretboardHighway({ instrument, tab, drumNotes, midi, getTime, pl
 
     // Readability: darken the lower part where the strings / pads are.
     const shadeGrad = ctx.createLinearGradient(0, h * 0.45, 0, h)
-    shadeGrad.addColorStop(0, 'rgba(4,8,16,0)')
-    shadeGrad.addColorStop(0.55, 'rgba(4,8,16,0.55)')
-    shadeGrad.addColorStop(1, 'rgba(4,8,16,0.9)')
+    shadeGrad.addColorStop(0, 'rgba(14,15,18,0)')
+    shadeGrad.addColorStop(0.55, 'rgba(14,15,18,0.55)')
+    shadeGrad.addColorStop(1, 'rgba(14,15,18,0.9)')
     ctx.fillStyle = shadeGrad
     ctx.fillRect(0, h * 0.45, w, h * 0.55)
 
@@ -247,7 +247,7 @@ export function FretboardHighway({ instrument, tab, drumNotes, midi, getTime, pl
         const a = proj(x0, y, d)
         const b = proj(x1, y, d)
         const bar = measures.has(Math.round(t * 1000))
-        ctx.strokeStyle = bar ? 'rgba(160,220,255,0.38)' : 'rgba(160,220,255,0.13)'
+        ctx.strokeStyle = bar ? 'rgba(242,239,233,0.3)' : 'rgba(242,239,233,0.09)'
         ctx.lineWidth = bar ? 2 * a.p + 0.5 : 1
         line(a.x, a.y, b.x, b.y)
       }
@@ -265,39 +265,27 @@ export function FretboardHighway({ instrument, tab, drumNotes, midi, getTime, pl
       ctx.beginPath()
       ctx.roundRect(x - bw / 2, y - bh / 2 + bh * 0.32, bw, bh, r)
       ctx.fill()
-      if (opts.glow) {
-        ctx.shadowColor = color
-        ctx.shadowBlur = 26
-      }
-      const g = ctx.createLinearGradient(0, y - bh / 2, 0, y + bh / 2)
-      if (opts.muted) {
-        g.addColorStop(0, '#3a1d22')
-        g.addColorStop(1, '#22100f')
-      } else {
-        g.addColorStop(0, shade(color, 0.35))
-        g.addColorStop(1, color)
-      }
-      ctx.fillStyle = g
+      // Flat gel fill; a note about to be played brightens instead of glowing.
+      ctx.fillStyle = opts.muted ? '#2a1714' : opts.glow ? shade(color, 0.25) : color
       ctx.beginPath()
       ctx.roundRect(x - bw / 2, y - bh / 2, bw, bh, r)
       ctx.fill()
-      ctx.shadowBlur = 0
-      ctx.strokeStyle = opts.muted ? color : 'rgba(255,255,255,0.75)'
-      ctx.lineWidth = Math.max(1, bh * 0.07)
-      ctx.stroke()
       if (opts.muted) {
-        ctx.strokeStyle = '#ff3b46'
+        ctx.strokeStyle = color
+        ctx.lineWidth = Math.max(1, bh * 0.07)
+        ctx.stroke()
+      }
+      if (opts.muted) {
+        ctx.strokeStyle = '#e0503a'
         ctx.lineWidth = Math.max(1.5, bh * 0.14)
         const s = bh * 0.32
         line(x - s, y - s, x + s, y + s)
         line(x + s, y - s, x - s, y + s)
       } else if (opts.label && bh >= 8) {
-        ctx.fillStyle = '#fff'
-        ctx.font = `700 ${Math.round(bh * 0.78)}px Rajdhani, sans-serif`
+        ctx.fillStyle = '#111214'
+        ctx.font = `600 ${Math.round(bh * 0.78)}px "Barlow Condensed", sans-serif`
         ctx.textAlign = 'center'
         ctx.textBaseline = 'middle'
-        ctx.shadowColor = 'rgba(0,0,0,0.8)'
-        ctx.shadowBlur = 3
         ctx.fillText(opts.label, x, y + bh * 0.04)
       }
       ctx.restore()
@@ -372,20 +360,20 @@ export function FretboardHighway({ instrument, tab, drumNotes, midi, getTime, pl
 
       // Floor: lanes receding to the vanishing point.
       floorQuad(wireX(firstWire), wireX(lastWire), floorY, 0, 1.05)
-      ctx.fillStyle = 'rgba(6,14,28,0.28)'
+      ctx.fillStyle = 'rgba(14,15,18,0.28)'
       ctx.fill()
       for (const n of active) {
         floorQuad(wireX(n - 1), wireX(n), floorY, 0, 1.05)
         const g = ctx.createLinearGradient(0, floorY, 0, vy + (floorY - vy) / (1 + DEPTH))
-        g.addColorStop(0, 'rgba(56,214,255,0.16)')
-        g.addColorStop(1, 'rgba(56,214,255,0)')
+        g.addColorStop(0, 'rgba(242,239,233,0.07)')
+        g.addColorStop(1, 'rgba(242,239,233,0)')
         ctx.fillStyle = g
         ctx.fill()
       }
       for (let n = firstWire; n <= lastWire; n++) {
         const a = proj(wireX(n), floorY, 0)
         const b = proj(wireX(n), floorY, 1.05)
-        ctx.strokeStyle = active.has(n) || active.has(n + 1) ? 'rgba(120,230,255,0.45)' : 'rgba(190,215,255,0.2)'
+        ctx.strokeStyle = active.has(n) || active.has(n + 1) ? 'rgba(242,239,233,0.45)' : 'rgba(242,239,233,0.16)'
         ctx.lineWidth = 1.2
         line(a.x, a.y, b.x, b.y)
       }
@@ -393,12 +381,19 @@ export function FretboardHighway({ instrument, tab, drumNotes, midi, getTime, pl
       // Fret numbers far away (where the notes come from).
       ctx.textAlign = 'center'
       ctx.textBaseline = 'bottom'
-      for (let n = Math.max(1, firstWire); n <= lastWire; n++) {
-        if (!INLAY_FRETS.has(n) && !active.has(n)) continue
+      // Active frets first, then inlays; a label that would touch one already drawn is skipped.
+      const farFrets: number[] = []
+      for (let n = Math.max(1, firstWire); n <= lastWire; n++) if (active.has(n)) farFrets.push(n)
+      for (let n = Math.max(1, firstWire); n <= lastWire; n++) if (INLAY_FRETS.has(n) && !active.has(n)) farFrets.push(n)
+      const drawnX: number[] = []
+      for (const n of farFrets) {
         const p = proj(fretCenter(n), floorY, 1)
-        ctx.fillStyle = active.has(n) ? 'rgba(255,190,70,0.95)' : 'rgba(230,240,255,0.6)'
-        ctx.font = `700 ${Math.max(10, 30 * p.p)}px Rajdhani, sans-serif`
-        ctx.fillText(String(n), p.x, p.y - 2)
+        const size = Math.max(15, 30 * p.p)
+        if (drawnX.some((x) => Math.abs(x - p.x) < size * 1.1)) continue
+        drawnX.push(p.x)
+        ctx.fillStyle = active.has(n) ? 'rgba(240,180,41,0.95)' : 'rgba(242,239,233,0.55)'
+        ctx.font = `600 ${size}px "Barlow Condensed", sans-serif`
+        ctx.fillText(String(n), p.x, p.y - 6)
       }
 
       // Neck at the impact plane.
@@ -410,7 +405,7 @@ export function FretboardHighway({ instrument, tab, drumNotes, midi, getTime, pl
       ctx.fillStyle = neck
       ctx.fillRect(wireX(firstWire), neckTop, wireX(lastWire) - wireX(firstWire), neckBottom - neckTop)
       // Inlays.
-      ctx.fillStyle = 'rgba(230,240,255,0.18)'
+      ctx.fillStyle = 'rgba(242,239,233,0.14)'
       for (let n = Math.max(1, firstWire); n <= lastWire; n++) {
         if (!INLAY_FRETS.has(n)) continue
         const cx = fretCenter(n)
@@ -421,16 +416,15 @@ export function FretboardHighway({ instrument, tab, drumNotes, midi, getTime, pl
           ctx.fill()
         }
       }
-      // Fret wires (anchor wires glow cyan).
+      // Fret wires (anchor wires drawn in full ink).
       const anchorLo = active.size ? Math.min(...active) - 1 : -1
       const anchorHi = active.size ? Math.max(...active) : -1
       for (let n = firstWire; n <= lastWire; n++) {
         const x = wireX(n)
         const anchor = n === anchorLo || n === anchorHi
-        ctx.strokeStyle = n === 0 ? '#e8e2d0' : anchor ? '#7ff3ff' : 'rgba(210,220,232,0.7)'
+        ctx.strokeStyle = n === 0 ? '#e8e2d0' : anchor ? '#f2efe9' : 'rgba(242,239,233,0.5)'
         ctx.lineWidth = n === 0 ? 6 : anchor ? 3.5 : 2
-        ctx.shadowColor = '#38d6ff'
-        ctx.shadowBlur = anchor ? 16 : 0
+        ctx.shadowBlur = 0
         line(x, neckTop, x, neckBottom)
       }
       ctx.shadowBlur = 0
@@ -441,9 +435,7 @@ export function FretboardHighway({ instrument, tab, drumNotes, midi, getTime, pl
         const color = STRING_COLORS[s]
         const g = Math.max(f.glow[s], f.keyFlash[s] * 0.6)
         ctx.strokeStyle = g > 0.05 ? shade(color, 0.35 * g) : color
-        ctx.lineWidth = 3.6 - s * 0.4 + g * 1.5
-        ctx.shadowColor = color
-        ctx.shadowBlur = 6 + g * 22
+        ctx.lineWidth = 3.6 - s * 0.4 + g * 2.5
         ctx.beginPath()
         if (f.glow[s] > 0.03) {
           const amp = f.glow[s] * gap * 0.16
@@ -532,12 +524,12 @@ export function FretboardHighway({ instrument, tab, drumNotes, midi, getTime, pl
       // String names / keys on the left.
       ctx.textAlign = 'left'
       ctx.textBaseline = 'middle'
-      ctx.font = `700 ${Math.max(11, gap * 0.62)}px Rajdhani, sans-serif`
+      ctx.font = `600 ${Math.max(11, gap * 0.62)}px "Barlow Condensed", sans-serif`
       for (let s = 0; s < 6; s++) {
-        ctx.fillStyle = 'rgba(4,8,16,0.75)'
+        ctx.fillStyle = 'rgba(14,15,18,0.75)'
         ctx.fillRect(0, stringY(s) - gap * 0.42, practiceRef.current ? gap * 1.9 : gap * 0.95, gap * 0.84)
         ctx.fillStyle = STRING_COLORS[s]
-        ctx.fillText(practiceRef.current ? `${STRING_NAMES[s]} ${STRING_KEYS[s]}` : STRING_NAMES[s], 5, stringY(s) + 1)
+        ctx.fillText(practiceRef.current ? `${STRING_NAMES[s]} ${STRING_KEYS[s]}` : STRING_NAMES[s], 12, stringY(s) + 1)
       }
 
       // Fret numbers under the neck.
@@ -547,10 +539,9 @@ export function FretboardHighway({ instrument, tab, drumNotes, midi, getTime, pl
         const on = active.has(n)
         const inlay = INLAY_FRETS.has(n)
         const size = on ? Math.min(34, h * 0.05) : inlay ? Math.min(26, h * 0.04) : Math.min(20, h * 0.032)
-        ctx.font = `700 ${size}px Rajdhani, sans-serif`
-        ctx.fillStyle = on ? '#ffc04a' : inlay ? 'rgba(226,232,240,0.85)' : 'rgba(148,163,184,0.55)'
-        ctx.shadowColor = on ? '#ff9a2e' : 'transparent'
-        ctx.shadowBlur = on ? 12 : 0
+        ctx.font = `600 ${size}px "Barlow Condensed", sans-serif`
+        ctx.fillStyle = on ? '#f0b429' : inlay ? 'rgba(242,239,233,0.85)' : 'rgba(160,156,148,0.6)'
+        ctx.shadowBlur = 0
         ctx.fillText(String(n), fretCenter(n), h * 0.958)
       }
       ctx.shadowBlur = 0
@@ -567,7 +558,7 @@ export function FretboardHighway({ instrument, tab, drumNotes, midi, getTime, pl
         if (n) spark(at(n).x, at(n).y, STRING_COLORS[n.string], 18)
       }
     } else {
-      // ───────────── Drums: lanes → hit line → drum kit (boceto v3) ─────────────
+      // ───────────── Drums: lanes → hit line → drum kit ─────────────
       const notes = drumNotes
       const hitY = h * 0.6
       const laneW = (right - left) / DRUM_LANES.length
@@ -575,83 +566,84 @@ export function FretboardHighway({ instrument, tab, drumNotes, midi, getTime, pl
       const laneColor = (lane: number) => (lane === KICK_LANE ? KICK.color : DRUM_LANES[lane].color)
       const kickGlow = Math.max(f.glow[KICK_LANE], f.keyFlash[KICK_LANE] * 0.6)
 
-      // Highway floor + lanes.
-      floorQuad(left, right, hitY, 0, 1.05)
-      ctx.fillStyle = 'rgba(6,14,28,0.42)'
+      // Same geometry as the guitar: notes ride a plane just above the floor,
+      // with a stem + floor shadow showing depth.
+      const noteH = h * 0.035 * 0.82
+      const floorY = hitY + h * 0.04
+      const noteW = Math.min(laneW * 0.66, 90)
+
+      // Lanes used in the next ~1.4 s get the same highlight as active frets.
+      const active = new Set<number>()
+      for (let i = lowerBound(notes, now - 0.05); i < notes.length && notes[i].time < now + 1.4; i++) active.add(notes[i].lane)
+
+      // Floor: lanes receding to the vanishing point.
+      floorQuad(left, right, floorY, 0, 1.05)
+      ctx.fillStyle = 'rgba(14,15,18,0.28)'
       ctx.fill()
-      DRUM_LANES.forEach((lane, i) => {
-        floorQuad(left + i * laneW, left + (i + 1) * laneW, hitY, 0, 1.05)
-        const g = ctx.createLinearGradient(0, hitY, 0, vy + (hitY - vy) / (1 + DEPTH))
-        g.addColorStop(0, rgba(lane.color, 0.1 + f.glow[i] * 0.25))
-        g.addColorStop(1, rgba(lane.color, 0.01))
+      DRUM_LANES.forEach((_, i) => {
+        if (!active.has(i)) return
+        floorQuad(left + i * laneW, left + (i + 1) * laneW, floorY, 0, 1.05)
+        const g = ctx.createLinearGradient(0, floorY, 0, vy + (floorY - vy) / (1 + DEPTH))
+        g.addColorStop(0, 'rgba(242,239,233,0.07)')
+        g.addColorStop(1, 'rgba(242,239,233,0)')
         ctx.fillStyle = g
         ctx.fill()
       })
       for (let i = 0; i <= DRUM_LANES.length; i++) {
-        const a = proj(left + i * laneW, hitY, 0)
-        const b = proj(left + i * laneW, hitY, 1.05)
-        ctx.strokeStyle = i === 0 || i === DRUM_LANES.length ? 'rgba(190,215,255,0.4)' : 'rgba(190,215,255,0.18)'
+        const a = proj(left + i * laneW, floorY, 0)
+        const b = proj(left + i * laneW, floorY, 1.05)
+        ctx.strokeStyle = active.has(i) || active.has(i - 1) ? 'rgba(242,239,233,0.45)' : 'rgba(242,239,233,0.16)'
         ctx.lineWidth = 1.2
         line(a.x, a.y, b.x, b.y)
       }
-      beatLines(left, right, hitY)
+      beatLines(left, right, floorY)
 
-      // Hollow, glowing note bars.
-      const gem = (x: number, y: number, bw: number, bh: number, color: string, alpha: number, glow: boolean) => {
-        ctx.save()
-        ctx.globalAlpha = alpha
-        const r = Math.min(bh * 0.35, 6)
-        ctx.shadowColor = color
-        ctx.shadowBlur = glow ? 30 : 12
-        ctx.fillStyle = rgba(color, glow ? 0.45 : 0.2)
-        ctx.strokeStyle = color
-        ctx.lineWidth = Math.max(1.5, bh * 0.24)
-        ctx.beginPath()
-        ctx.roundRect(x - bw / 2, y - bh / 2, bw, bh, r)
-        ctx.fill()
-        ctx.stroke()
-        ctx.shadowBlur = 0
-        if (bh > 6) {
-          ctx.strokeStyle = 'rgba(255,255,255,0.75)'
-          ctx.lineWidth = Math.max(1, bh * 0.08)
-          ctx.beginPath()
-          ctx.roundRect(x - bw / 2 + bh * 0.3, y - bh * 0.2, bw - bh * 0.6, bh * 0.4, r * 0.5)
-          ctx.stroke()
-        }
-        ctx.restore()
-      }
-
+      // Notes, far → near: same flat gel blocks, stems and floor shadows as the guitar.
       const start = lowerBound(notes, now - 0.2)
       const end = lowerBound(notes, now + LOOK_AHEAD * 1.05)
       for (let i = end - 1; i >= start; i--) {
         const n = notes[i]
-        if (n.time < now - 0.1) continue
+        if (n.time < now - 0.12) continue
         if (practiceRef.current && f.judged.get(n.id) === 'miss') continue
         const d = Math.max(0, depthOf(n.time))
-        const alpha = n.time < now ? Math.max(0, 1 - (now - n.time) / 0.1) : 1
-        const near = Math.abs(n.time - now) < 0.06
+        const past = n.time < now
+        const alpha = past ? Math.max(0, 1 - (now - n.time) / 0.12) : 1
+        const near = Math.abs(n.time - now) < 0.07
+        const color = laneColor(n.lane)
         if (n.lane === KICK_LANE) {
-          const a = proj(left + 8, hitY, d)
-          const b = proj(right - 8, hitY, d)
-          gem((a.x + b.x) / 2, a.y, b.x - a.x, Math.max(3, laneW * 0.06 * a.p), KICK.color, alpha * 0.9, near)
-        } else {
-          const p = proj(laneX(n.lane), hitY, d)
-          gem(p.x, p.y, laneW * 0.66 * p.p, Math.max(4, laneW * 0.13 * p.p), DRUM_LANES[n.lane].color, alpha, near)
+          // Kick: a bar across all lanes, like an open string.
+          const a = proj(left + 6, hitY, d)
+          const b = proj(right - 6, hitY, d)
+          block((a.x + b.x) / 2, a.y, b.x - a.x, noteH * 0.6 * a.p, color, { alpha, glow: near })
+          continue
         }
+        const x = laneX(n.lane)
+        const p = proj(x, hitY, d)
+        if (!past) {
+          const fl = proj(x, floorY, d)
+          ctx.strokeStyle = 'rgba(255,255,255,0.32)'
+          ctx.lineWidth = Math.max(1, 2 * p.p)
+          line(p.x, p.y + noteH * 0.5 * p.p, fl.x, fl.y)
+          ctx.fillStyle = rgba(color, 0.35)
+          ctx.beginPath()
+          ctx.ellipse(fl.x, fl.y, noteW * 0.38 * p.p, 3 * p.p + 1, 0, 0, Math.PI * 2)
+          ctx.fill()
+        }
+        block(p.x, p.y, noteW * p.p, noteH * p.p, color, {
+          label: practiceRef.current ? DRUM_LANES[n.lane].key : undefined,
+          alpha,
+          glow: near,
+        })
       }
 
-      // Hit line: bright rail with a coloured target per lane.
-      ctx.shadowColor = kickGlow > 0.05 ? KICK.color : '#bfe9ff'
-      ctx.shadowBlur = 10 + kickGlow * 26
-      ctx.strokeStyle = kickGlow > 0.05 ? shade(KICK.color, 0.5 - kickGlow * 0.3) : 'rgba(235,245,255,0.9)'
+      // Hit line: ink rail (kick flashes it orange) with a gel target per lane.
+      ctx.strokeStyle = kickGlow > 0.05 ? shade(KICK.color, 0.3 * kickGlow) : 'rgba(242,239,233,0.85)'
       ctx.lineWidth = 3 + kickGlow * 3
       line(left, hitY, right, hitY)
       DRUM_LANES.forEach((lane, i) => {
         const g = Math.max(f.glow[i], f.keyFlash[i] * 0.6)
-        const tw = laneW * 0.7
-        const th = Math.max(6, laneW * 0.13)
-        ctx.shadowColor = lane.color
-        ctx.shadowBlur = 6 + g * 28
+        const tw = noteW * 1.1
+        const th = noteH * 1.15
         ctx.strokeStyle = g > 0.05 ? shade(lane.color, 0.45 * g) : rgba(lane.color, 0.7)
         ctx.fillStyle = rgba(lane.color, 0.06 + g * 0.4)
         ctx.lineWidth = 2 + g * 2
@@ -660,61 +652,56 @@ export function FretboardHighway({ instrument, tab, drumNotes, midi, getTime, pl
         ctx.fill()
         ctx.stroke()
         ctx.lineWidth = 5 + g * 3
-        ctx.strokeStyle = lane.color
+        ctx.strokeStyle = g > 0.05 ? shade(lane.color, 0.45 * g) : lane.color
         line(laneX(i) - tw / 2, hitY, laneX(i) + tw / 2, hitY)
       })
-      ctx.shadowBlur = 0
 
-      // ── Drum kit under the hit line (on its own dark stage so the photo doesn't clash) ──
+      // ── Drum kit under the hit line, on its own dark stage ──
       const stage = ctx.createLinearGradient(0, hitY, 0, h)
-      stage.addColorStop(0, 'rgba(4,8,16,0.55)')
-      stage.addColorStop(0.25, 'rgba(4,8,16,0.82)')
-      stage.addColorStop(1, 'rgba(4,8,16,0.92)')
+      stage.addColorStop(0, 'rgba(14,15,18,0.6)')
+      stage.addColorStop(0.25, 'rgba(14,15,18,0.86)')
+      stage.addColorStop(1, 'rgba(14,15,18,0.95)')
       ctx.fillStyle = stage
-      ctx.fillRect(0, hitY + 4, w, h - hitY - 4)
-      const labelSize = Math.min(18, h * 0.03)
+      ctx.fillRect(0, floorY, w, h - floorY)
+      const labelSize = Math.min(20, h * 0.032)
       const label = (text: string, key: string, color: string, x: number, y: number) => {
-        ctx.font = `700 ${labelSize}px Rajdhani, sans-serif`
+        ctx.font = `600 ${labelSize}px "Barlow Condensed", sans-serif`
         ctx.textAlign = 'center'
         ctx.textBaseline = 'middle'
+        ctx.lineJoin = 'round'
         ctx.lineWidth = 4
-        ctx.strokeStyle = 'rgba(4,8,16,0.9)'
+        ctx.strokeStyle = 'rgba(14,15,18,0.9)'
         const t = practiceRef.current ? `${text.toUpperCase()} · ${key}` : text.toUpperCase()
         ctx.strokeText(t, x, y)
         ctx.fillStyle = color
         ctx.fillText(t, x, y)
+        ctx.lineJoin = 'miter'
       }
+      const BRASS = '#b8913f'
       const cymbal = (cx: number, cy: number, rx: number, color: string, g: number) => {
         const ry = rx * 0.3
-        ctx.strokeStyle = 'rgba(200,212,228,0.55)'
+        ctx.strokeStyle = 'rgba(138,135,127,0.7)'
         ctx.lineWidth = Math.max(2, rx * 0.04)
         line(cx, cy, cx, h)
         ctx.save()
         ctx.translate(cx, cy + g * rx * 0.04)
         ctx.rotate(Math.sin(now * 26) * g * 0.12)
-        const grad = ctx.createRadialGradient(-rx * 0.25, -ry * 0.35, rx * 0.05, 0, 0, rx)
-        grad.addColorStop(0, g > 0.05 ? '#fffbe6' : '#fbe7a6')
-        grad.addColorStop(0.5, '#d4a13f')
-        grad.addColorStop(1, '#6f4b14')
-        ctx.shadowColor = color
-        ctx.shadowBlur = 10 + g * 34
-        ctx.fillStyle = grad
+        ctx.fillStyle = g > 0.05 ? shade(BRASS, 0.45 * g) : BRASS
         ctx.beginPath()
         ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2)
         ctx.fill()
-        ctx.shadowBlur = 0
-        ctx.strokeStyle = 'rgba(90,60,15,0.35)'
+        ctx.strokeStyle = 'rgba(14,15,18,0.3)'
         ctx.lineWidth = 1
         for (const k of [0.38, 0.58, 0.78]) {
           ctx.beginPath()
           ctx.ellipse(0, 0, rx * k, ry * k, 0, 0, Math.PI * 2)
           ctx.stroke()
         }
-        ctx.fillStyle = '#f6d982'
+        ctx.fillStyle = shade(BRASS, 0.35)
         ctx.beginPath()
         ctx.ellipse(0, -ry * 0.05, rx * 0.15, ry * 0.22, 0, 0, Math.PI * 2)
         ctx.fill()
-        ctx.strokeStyle = g > 0.05 ? shade(color, 0.4 * g) : rgba(color, 0.85)
+        ctx.strokeStyle = g > 0.05 ? shade(color, 0.4 * g) : color
         ctx.lineWidth = 2 + g * 3
         ctx.beginPath()
         ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2)
@@ -726,13 +713,8 @@ export function FretboardHighway({ instrument, tab, drumNotes, midi, getTime, pl
         const ry = rx * 0.34
         const depth = rx * 0.45
         const y = cy + g * rx * 0.05
-        // Shell.
-        const sg = ctx.createLinearGradient(cx - rx, 0, cx + rx, 0)
-        sg.addColorStop(0, shade(color, -0.75))
-        sg.addColorStop(0.35, shade(color, -0.2))
-        sg.addColorStop(0.55, shade(color, 0.35))
-        sg.addColorStop(1, shade(color, -0.8))
-        ctx.fillStyle = sg
+        // Shell: the gel darkened, like a note's extruded underside.
+        ctx.fillStyle = shade(color, -0.55)
         ctx.beginPath()
         ctx.moveTo(cx - rx, y)
         ctx.lineTo(cx - rx, y + depth)
@@ -740,25 +722,19 @@ export function FretboardHighway({ instrument, tab, drumNotes, midi, getTime, pl
         ctx.lineTo(cx + rx, y)
         ctx.closePath()
         ctx.fill()
-        ctx.fillStyle = 'rgba(225,232,242,0.8)'
+        ctx.fillStyle = 'rgba(242,239,233,0.55)'
         for (const k of [-0.7, -0.25, 0.25, 0.7]) ctx.fillRect(cx + k * rx - rx * 0.025, y + depth * 0.25 + Math.abs(k) * ry * 0.4, rx * 0.05, depth * 0.45)
-        // Head.
-        ctx.shadowColor = color
-        ctx.shadowBlur = 8 + g * 32
-        const hg = ctx.createRadialGradient(cx - rx * 0.2, y - ry * 0.3, rx * 0.05, cx, y, rx)
-        hg.addColorStop(0, '#ffffff')
-        hg.addColorStop(1, '#bcc7d4')
-        ctx.fillStyle = hg
+        // Head: flat ink, tinted by the gel when struck.
+        ctx.fillStyle = '#d9d5cc'
         ctx.beginPath()
         ctx.ellipse(cx, y, rx, ry, 0, 0, Math.PI * 2)
         ctx.fill()
-        ctx.shadowBlur = 0
         ctx.fillStyle = rgba(color, 0.12 + g * 0.55)
         ctx.fill()
-        ctx.strokeStyle = '#d5dde8'
+        ctx.strokeStyle = '#8a877f'
         ctx.lineWidth = Math.max(2, rx * 0.05)
         ctx.stroke()
-        ctx.strokeStyle = g > 0.05 ? shade(color, 0.45 * g) : rgba(color, 0.85)
+        ctx.strokeStyle = g > 0.05 ? shade(color, 0.45 * g) : color
         ctx.lineWidth = 2 + g * 3
         ctx.beginPath()
         ctx.ellipse(cx, y, rx * 0.9, ry * 0.9, 0, 0, Math.PI * 2)
@@ -775,23 +751,17 @@ export function FretboardHighway({ instrument, tab, drumNotes, midi, getTime, pl
         const cx = w / 2
         const cy = h + R * 0.12
         const bump = kickGlow * R * 0.03
-        ctx.shadowColor = KICK.color
-        ctx.shadowBlur = 10 + kickGlow * 36
-        ctx.fillStyle = shade(KICK.color, -0.6)
+        ctx.fillStyle = shade(KICK.color, -0.55)
         ctx.beginPath()
         ctx.arc(cx, cy, R + bump, 0, Math.PI * 2)
         ctx.fill()
-        ctx.shadowBlur = 0
-        const hg = ctx.createRadialGradient(cx - R * 0.25, cy - R * 0.35, R * 0.1, cx, cy, R)
-        hg.addColorStop(0, '#ffffff')
-        hg.addColorStop(1, '#aeb9c7')
-        ctx.fillStyle = hg
+        ctx.fillStyle = '#d9d5cc'
         ctx.beginPath()
         ctx.arc(cx, cy, R * 0.86 + bump, 0, Math.PI * 2)
         ctx.fill()
         ctx.fillStyle = rgba(KICK.color, 0.1 + kickGlow * 0.5)
         ctx.fill()
-        ctx.strokeStyle = '#d5dde8'
+        ctx.strokeStyle = '#8a877f'
         ctx.lineWidth = Math.max(2, R * 0.04)
         ctx.stroke()
         ctx.strokeStyle = kickGlow > 0.05 ? shade(KICK.color, 0.4 * kickGlow) : KICK.color
@@ -801,7 +771,7 @@ export function FretboardHighway({ instrument, tab, drumNotes, midi, getTime, pl
         ctx.stroke()
         label(KICK.label, KICK.key, KICK.color, cx, cy - R * 0.5)
       }
-      // Back row (hi-hat, tom alto, crash) then front row (tarola, tom piso).
+      // Back row (hi-hat, tom alto, platillos) then front row (tarola, tom piso).
       const kit: { lane: number; kind: 'cymbal' | 'drum'; y: number; r: number }[] = [
         { lane: 0, kind: 'cymbal', y: rowHi, r: padR * 1.05 },
         { lane: 2, kind: 'drum', y: rowHi, r: padR * 0.85 },
@@ -829,15 +799,15 @@ export function FretboardHighway({ instrument, tab, drumNotes, midi, getTime, pl
         f.popups = f.popups.filter((p) => p.y !== bannerY)
         popup(w / 2, bannerY, text, color, Math.min(44, h * 0.065), 0.6)
       }
-      missCheck(notes, at, () => banner('FALLO', '#ff3b46'))
+      missCheck(notes, at, () => banner('FALLO', '#e0503a'))
       for (const { id, dt: off } of f.pendingHits.splice(0)) {
         const n = notes[id]
         if (!n) continue
         const p = at(n)
         const perfect = off <= PERFECT_WINDOW
         spark(p.x, p.y, laneColor(n.lane), 18)
-        popup(p.x, p.y - laneW * 0.12, perfect ? '+150' : '+100', '#ffffff', Math.min(30, h * 0.045))
-        banner(perfect ? '¡PERFECTO!' : '¡BIEN!', perfect ? '#ffd23f' : '#38d6ff')
+        popup(p.x, p.y - laneW * 0.12, perfect ? '+150' : '+100', '#f2efe9', Math.min(30, h * 0.045))
+        banner(perfect ? '¡PERFECTO!' : '¡BIEN!', perfect ? '#f0b429' : '#f2efe9')
       }
     }
 
@@ -849,15 +819,13 @@ export function FretboardHighway({ instrument, tab, drumNotes, midi, getTime, pl
       pt.y += pt.vy * dt
       ctx.globalAlpha = Math.min(1, pt.life * 2.5)
       ctx.fillStyle = pt.color
-      ctx.shadowColor = pt.color
-      ctx.shadowBlur = 8
       ctx.fillRect(pt.x - 1.5, pt.y - 1.5, 3, 3)
     }
     ctx.globalAlpha = 1
     ctx.shadowBlur = 0
     // Missed notes: red X.
     f.misses = f.misses.filter((m) => (m.life -= dt) > 0)
-    ctx.strokeStyle = '#ff3b46'
+    ctx.strokeStyle = '#e0503a'
     ctx.lineCap = 'round'
     for (const m of f.misses) {
       const s = 10 + (0.6 - m.life) * 22
@@ -868,26 +836,25 @@ export function FretboardHighway({ instrument, tab, drumNotes, midi, getTime, pl
     }
     ctx.globalAlpha = 1
     ctx.lineCap = 'butt'
-    // Score / judgement popups: pop in, float up, fade out.
+    // Score / judgement popups: pop in, float up, fade out (flat ink, no halo).
     f.popups = f.popups.filter((pp) => (pp.life -= dt) > 0)
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
+    ctx.lineJoin = 'round'
     for (const pp of f.popups) {
       const age = pp.max - pp.life
       const scale = 1 + Math.max(0, 0.12 - age) * 3
       ctx.globalAlpha = Math.min(1, pp.life * 3)
-      ctx.font = `italic 800 ${Math.round(pp.size * scale)}px Rajdhani, sans-serif`
+      ctx.font = `600 ${Math.round(pp.size * scale)}px "Barlow Condensed", sans-serif`
       const y = pp.y - age * 50
       ctx.lineWidth = 5
-      ctx.strokeStyle = 'rgba(4,8,16,0.85)'
+      ctx.strokeStyle = 'rgba(14,15,18,0.9)'
       ctx.strokeText(pp.text, pp.x, y)
-      ctx.shadowColor = pp.color
-      ctx.shadowBlur = 16
       ctx.fillStyle = pp.color
       ctx.fillText(pp.text, pp.x, y)
-      ctx.shadowBlur = 0
     }
     ctx.globalAlpha = 1
+    ctx.lineJoin = 'miter'
 
     // Decay glows.
     const decay = Math.exp(-dt * 5)
@@ -901,34 +868,23 @@ export function FretboardHighway({ instrument, tab, drumNotes, midi, getTime, pl
   const hasNotes = instrument === 'guitar' ? tab.notes.length > 0 : drumNotes.length > 0
 
   return (
-    <div className="relative min-h-0 flex-1 overflow-hidden rounded-xl border border-cyan-400/20 bg-[#0b1626]">
-      {/* Stage: haze + squirrel, blended into the dark UI */}
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_50%_38%,rgba(40,96,150,0.55),transparent_62%),radial-gradient(ellipse_at_50%_100%,rgba(56,214,255,0.12),transparent_55%)]" />
+    <div className="relative min-h-0 flex-1 overflow-hidden bg-stage">
+      {/* Squirrel per instrument, dimmed and vignetted into the stage */}
       <img
         ref={imgRef}
         src={`${import.meta.env.BASE_URL}${instrument === 'guitar' ? 'ardilla-guitarra.webp' : 'ardilla-bateria.webp'}`}
         alt=""
         draggable={false}
         className="pointer-events-none absolute top-[1%] left-1/2 h-[98%] max-w-none -translate-x-1/2 origin-bottom select-none"
-        style={{ filter: 'brightness(0.62) saturate(0.9) contrast(1.05) drop-shadow(0 0 28px rgba(56,214,255,0.28))', opacity: 0.88 }}
+        style={{ filter: 'brightness(0.5) saturate(0.8)', opacity: 0.85 }}
       />
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_50%_45%,transparent_45%,rgba(5,9,18,0.85)_100%)]" />
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_50%_45%,transparent_40%,var(--color-stage)_100%)]" />
+
       <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" />
 
-      {/* HUD */}
-      <div className="pointer-events-none absolute top-2 left-3 flex items-center gap-2 text-xs font-semibold tracking-wider">
-        <span className="rounded-md border border-amber-400/50 bg-[#050912]/75 px-2 py-1 text-amber-300">
-          MODO {INSTRUMENT_LABEL[instrument].toUpperCase()}
-        </span>
-        {midi && (
-          <span className="rounded-md border border-cyan-400/30 bg-[#050912]/75 px-2 py-1 text-cyan-200">
-            {Math.round(midi.bpm)} BPM · {midi.timeSignature.join('/')}
-          </span>
-        )}
-      </div>
       <div className="absolute top-2 right-3 flex items-center gap-2 text-xs font-semibold">
         {practice && (
-          <span className="rounded-md border border-green-400/40 bg-[#050912]/80 px-2 py-1 tabular-nums text-green-300">
+          <span className="rounded-md bg-stage/85 px-2.5 py-1.5 font-cond text-sm text-ink">
             {score.points} pts · {score.hits}/{total} · racha {score.streak}
           </span>
         )}
@@ -939,8 +895,8 @@ export function FretboardHighway({ instrument, tab, drumNotes, midi, getTime, pl
           }}
           aria-pressed={practice}
           title={instrument === 'guitar' ? 'Toca las cuerdas con A S D F G H' : 'Pads con A S D F G, bombo con J'}
-          className={`flex items-center gap-1 rounded-md border px-2 py-1 transition ${
-            practice ? 'border-green-400/70 bg-green-500/20 text-green-200' : 'border-cyan-400/40 bg-[#050912]/75 text-cyan-200 hover:border-cyan-300'
+          className={`flex h-8 items-center gap-1.5 rounded-md px-2.5 transition active:scale-[0.97] ${
+            practice ? 'bg-ink text-stage' : 'bg-control/90 text-ink-2 hover:text-ink'
           }`}
         >
           <Keyboard className="h-4 w-4" /> {practice ? 'Teclado activo' : 'Tocar con teclado'}
@@ -949,8 +905,8 @@ export function FretboardHighway({ instrument, tab, drumNotes, midi, getTime, pl
 
       {!hasNotes && (
         <div className="pointer-events-none absolute inset-x-0 top-[30%] flex justify-center">
-          <p className="rounded-lg border border-amber-400/40 bg-[#050912]/80 px-4 py-2 text-center text-sm text-amber-200">
-            Sin notas para {INSTRUMENT_LABEL[instrument].toLowerCase()}: carga su archivo <b>.mid</b> en ARCHIVOS → {instrument}.
+          <p className="rounded-lg bg-raised px-4 py-2.5 text-center text-sm text-ink-2">
+            Sin notas para {INSTRUMENT_LABEL[instrument].toLowerCase()}: carga su <b>.mid</b> desde Pistas → {INSTRUMENT_LABEL[instrument]} → ▾.
           </p>
         </div>
       )}

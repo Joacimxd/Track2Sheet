@@ -107,7 +107,7 @@ export async function loadSong(
     const synthRef = source.synth?.[id]
     if (synthRef) {
       const parsed = parseMidi(await readRef(synthRef), synthRef.name, id === 'drums')
-      stems[id] = { name: `${id}.wav (sintetizado)`, kind: 'synth', duration: parsed.duration + 0.5, synth: parsed }
+      stems[id] = { name: `${id}.wav`, kind: 'synth', duration: parsed.duration + 0.5, synth: parsed }
     }
   }
 
