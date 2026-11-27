@@ -1,8 +1,6 @@
-# The image only needs requirements.txt; the project is mounted at runtime by docker-compose.
-# Keep big folders out of the build context.
-.git
-interfaz/
-output/
-models/
-**/__pycache__
-**/.ipynb_checkpoints
+*
+!requirements.txt
+!web/package.json
+!web/package-lock.json
+!engine/cli/
+!docker/

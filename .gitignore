@@ -10,3 +10,6 @@ engine/muscriptor.cpp/
 engine/build/
 engine/bin/
 .DS_Store
+cache_nivel2_v2/
+notebooks/midi_predicho/
+.cache/

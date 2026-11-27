@@ -1,38 +1,15 @@
 services:
-  jupyter:
-    build:
-      context: .
-      args:
-        HOST_UID: ${HOST_UID:-1000}
-        HOST_GID: ${HOST_GID:-1000}
+  track2sheet:
+    build: .
     image: track2sheet
-    env_file: .env
-    environment:
-      JUPYTER_TOKEN: ${JUPYTER_TOKEN}
     ports:
-      - "127.0.0.1:${JUPYTER_PORT:-8888}:8888"
+      - "127.0.0.1:8765:8765"
+      - "127.0.0.1:5173:5173"
+      - "127.0.0.1:8888:8888"
     volumes:
       - .:/workspace
+      - web_modules:/workspace/web/node_modules
     shm_size: 2gb
-    # Use Docker's default bridge instead of a per-project network (on some hosts the
-    # firewall only lets the default bridge reach the internet).
-    network_mode: bridge
 
-  # Spotify Basic Pitch notebook (stem -> MIDI): docker compose up --build basicpitch
-  basicpitch:
-    build:
-      context: .
-      dockerfile: Dockerfile.basicpitch
-      args:
-        HOST_UID: ${HOST_UID:-1000}
-        HOST_GID: ${HOST_GID:-1000}
-    image: track2sheet-basicpitch
-    env_file: .env
-    environment:
-      JUPYTER_TOKEN: ${JUPYTER_TOKEN}
-    ports:
-      - "127.0.0.1:${BASICPITCH_PORT:-8889}:8888"
-    volumes:
-      - .:/workspace
-    network_mode: bridge
-    profiles: [basicpitch]
+volumes:
+  web_modules:

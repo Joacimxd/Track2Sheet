@@ -1,5 +1,19 @@
-yt-dlp[default,deno] @ git+https://github.com/yt-dlp/yt-dlp.git
-audio-separator[gpu]
-python-dotenv
+fastapi
+uvicorn[standard]
+yt-dlp[default,deno]
+audio-separator[cpu]
+audioread
+numpy
+soundfile
+soxr
+mido
+pytest
 jupyterlab
 ipywidgets
+matplotlib
+scipy
+librosa
+pandas
+torch
+huggingface_hub
+remotezip

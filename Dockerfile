@@ -1,30 +1,34 @@
-FROM python:3.12-slim
+FROM python:3.12-slim-trixie
 
-# ffmpeg: audio conversion for yt-dlp / audio-separator; git: yt-dlp is installed from GitHub;
-# build-essential: diffq (an audio-separator dependency) is compiled from source
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg git build-essential \
+    && apt-get install -y --no-install-recommends ffmpeg git cmake ninja-build g++ curl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
+COPY --from=node:22-trixie-slim /usr/local/bin/node /usr/local/bin/node
+COPY --from=node:22-trixie-slim /usr/local/lib/node_modules /usr/local/lib/node_modules
+RUN ln -s /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
+    && ln -s /usr/local/lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx
+
+COPY engine/cli /opt/engine/cli
+RUN git clone https://github.com/DamRsn/muscriptor.cpp.git /opt/engine/muscriptor.cpp \
+    && git -C /opt/engine/muscriptor.cpp checkout --quiet 8589219cc3b584bce970f95aec2ec4a04e53b280 \
+    && cmake -S /opt/engine/cli -B /opt/engine/build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+    && cmake --build /opt/engine/build \
+    && mkdir -p /opt/engine/bin && cp /opt/engine/build/t2s_transcribe /opt/engine/bin/ \
+    && rm -rf /opt/engine/build /opt/engine/muscriptor.cpp/.git
+
 COPY requirements.txt /tmp/requirements.txt
-# Long timeout/retries and a cache mount so a slow connection resumes instead of restarting
-# the multi-GB torch/CUDA downloads.
-ENV PIP_DEFAULT_TIMEOUT=600 PIP_RETRIES=15
-RUN --mount=type=cache,target=/root/.cache/pip pip install -r /tmp/requirements.txt
-# audio-separator imports audioread but doesn't declare it as a dependency
-RUN pip install --no-cache-dir audioread
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --extra-index-url https://download.pytorch.org/whl/cpu -r /tmp/requirements.txt
 
-# Run as a normal user with the host's uid/gid so files in output/ belong to you.
-# On macOS HOST_GID is often 20 (staff), which already exists as dialout in Debian.
-ARG HOST_UID=1000
-ARG HOST_GID=1000
-RUN existing="$(getent group "${HOST_GID}" | cut -d: -f1)"; \
-    if [ -z "$existing" ]; then groupadd -g "${HOST_GID}" app; existing=app; fi; \
-    useradd -m -u "${HOST_UID}" -g "$existing" -o app
-USER app
+COPY web/package.json web/package-lock.json /workspace/web/
+RUN cd /workspace/web && npm ci --no-audit --no-fund \
+    && sha1sum package-lock.json > node_modules/.installed-lock
 
-# The project folder is mounted here by docker-compose (notebooks, output, models, .env).
+COPY docker/start.sh /usr/local/bin/start
+ENV PYTHONPATH=/workspace \
+    MUSCRIPTOR_BIN=/opt/engine/bin/t2s_transcribe \
+    MUSCRIPTOR_MODEL=/workspace/models/muscriptor-large-f16.gguf
 WORKDIR /workspace
-EXPOSE 8888
-
-CMD ["sh", "-c", "jupyter lab --ip=0.0.0.0 --port=8888 --no-browser --ServerApp.token=\"$JUPYTER_TOKEN\" --ServerApp.root_dir=/workspace --LabApp.default_url=/lab/tree/notebooks/track2stems.ipynb"]
+EXPOSE 8765 5173 8888
+CMD ["start"]

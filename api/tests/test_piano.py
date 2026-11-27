@@ -1,13 +1,8 @@
-"""Piano cleanup / hand split and the per-instrument MuScriptor passes.
-
-    .venv/bin/python -m pytest api/tests
-"""
-
-import json
+import mido
 
 from api import pipeline
 from api.piano import FINGERS, REACH, build_piano, clean, split_hands
-from api.tab.core import Note
+from api.guitar.core import Note
 
 
 def hands_of(notes):
@@ -16,7 +11,6 @@ def hands_of(notes):
 
 
 def test_bass_and_melody_go_to_different_hands():
-    # Left hand: C2–G2 octave pattern; right hand: a melody around C5, played at the same time.
     left = [Note(i * 0.5, 0.4, p) for i, p in enumerate([36, 43, 36, 43, 41, 48, 41, 48])]
     right = [Note(i * 0.25, 0.2, p) for i, p in enumerate([72, 74, 76, 77, 79, 77, 76, 74] * 2)]
     hands = hands_of(left + right)
@@ -32,7 +26,6 @@ def test_wide_chord_is_split_at_its_gap():
 
 
 def test_left_hand_run_climbing_stays_left():
-    # A bass line walking up while the right hand holds chords high above.
     walk = [Note(i * 0.5, 0.4, 40 + i) for i in range(12)]
     chords = [Note(i * 2.0, 1.9, p) for i in range(3) for p in (72, 76, 79)]
     hands = hands_of(walk + chords)
@@ -40,14 +33,11 @@ def test_left_hand_run_climbing_stays_left():
 
 
 def test_without_stem_only_touching_fragments_merge():
-    out, removed = clean([Note(0, 0.5, 60), Note(0.51, 0.5, 60), Note(1.3, 0.5, 60), Note(1.2, 0.01, 64)])
-    # 0.51 touches the first note (≤ 20 ms): one note; 1.3 comes after a rest: a new strike;
-    # the 10 ms blip goes.
+    out = clean([Note(0, 0.5, 60), Note(0.51, 0.5, 60), Note(1.3, 0.5, 60), Note(1.2, 0.01, 64)])
     assert [(n.time, round(n.duration, 2), n.midi) for n in out] == [(0, 1.01, 60), (1.3, 0.5, 60)]
 
 
 def _tone(path, sr, parts):
-    """Write a piano-ish stem: parts = [(start, end, midi, attack?)] decaying sines."""
     import numpy as np
     import soundfile as sf
 
@@ -61,24 +51,21 @@ def _tone(path, sr, parts):
 
 def test_stem_tells_held_from_restruck_and_ghosts(tmp_path):
     stem = tmp_path / "piano.wav"
-    # C4 struck at 0 and held to 2 s; E4 struck at 0 and again at 1 s; nothing at G5.
     _tone(stem, 22050, [(0, 2, 60, True), (0, 1, 64, True), (1, 2, 64, True)])
-    notes = [Note(0, 1, 60), Note(1, 1, 60),        # one held C4, chopped in two by the transcriber
-             Note(0, 1, 64), Note(1, 1, 64),        # E4 struck twice
-             Note(0.5, 1, 79)]                      # a ghost
-    out, removed = clean(notes, stem)
+    notes = [Note(0, 1, 60), Note(1, 1, 60),
+             Note(0, 1, 64), Note(1, 1, 64),
+             Note(0.5, 1, 79)]
+    out = clean(notes, stem)
     assert [(n.time, n.duration, n.midi) for n in out] == [(0, 2, 60), (0, 1, 64), (1, 1, 64)]
-    assert removed["held_merged"] == 1 and removed["ghosts"] == 1
 
 
 def test_stray_note_far_from_everything_is_dropped():
     line = [Note(i * 0.25, 0.25, 60 + (i % 5)) for i in range(16)]
-    out, removed = clean(line + [Note(2.0, 0.1, 96)])
-    assert removed["strays"] == 1 and all(n.midi < 70 for n in out)
+    out = clean(line + [Note(2.0, 0.1, 96)])
+    assert len(out) == len(line) and all(n.midi < 70 for n in out)
 
 
 def _hands_ok(notes):
-    """Every hand strike: at most five notes, within one hand's reach."""
     by_hand = {}
     for n, h in zip(notes, split_hands(notes)):
         by_hand.setdefault((n.time, h), []).append(n.midi)
@@ -86,32 +73,30 @@ def _hands_ok(notes):
 
 
 def test_no_more_than_ten_fingers():
-    cluster = [Note(0, 1.0 - i * 0.05, p) for i, p in enumerate(range(48, 72, 2))]  # 12 notes at once
-    out, removed = clean(cluster)
-    assert len(out) == 10 and removed["fingers"] == 2
-    assert {48, 70} <= {n.midi for n in out}  # bass and top note stay
+    cluster = [Note(0, 1.0 - i * 0.05, p) for i, p in enumerate(range(48, 72, 2))]
+    out = clean(cluster)
+    assert len(out) == 10
+    assert {48, 70} <= {n.midi for n in out}
     assert _hands_ok(out)
 
 
 def test_three_hands_worth_of_notes_loses_the_weakest_cluster():
-    # Low, middle and high clusters struck together: two hands can't reach all three.
     low, mid, high = [36, 40, 43], [60, 64], [84, 88, 91]
     notes = [Note(0, 1, p) for p in low + high] + [Note(0, 0.3, p) for p in mid]
-    out, removed = clean(notes)
-    assert sorted(n.midi for n in out) == low + high and removed["fingers"] == 2
+    out = clean(notes)
+    assert sorted(n.midi for n in out) == low + high
 
 
 def test_six_notes_in_an_octave_take_both_hands():
     notes = [Note(0, 1, p) for p in (60, 62, 64, 65, 67, 69)]
-    out, removed = clean(notes)
-    assert len(out) == 6 and removed["fingers"] == 0
+    out = clean(notes)
+    assert len(out) == 6
     assert set(split_hands(out)) == {0, 1} and _hands_ok(out)
 
 
 def test_build_piano_without_stems():
     res = build_piano([Note(0, 0.5, 48), Note(0, 0.5, 72)])
     assert [n["hand"] for n in res["notes"]] == [0, 1]
-    assert res["range"] == [48, 72]
 
 
 def note(onset, pitch, program, drum=False):
@@ -120,12 +105,11 @@ def note(onset, pitch, program, drum=False):
 
 
 def fake_muscriptor(monkeypatch, tmp_path, output):
-    """MuScriptor stand-in: every pass hears `output` (and must keep only its own instruments)."""
     calls = []
 
     def fake_run(raw, out, groups, progress, on_progress):
         calls.append(groups)
-        return {"notes": output, "device": "test", "duration": 3}
+        return {"notes": output}
 
     monkeypatch.setattr(pipeline, "run_muscriptor", fake_run)
     monkeypatch.setattr(pipeline, "to_16k_mono", lambda mix, dst: None)
@@ -140,25 +124,22 @@ HEARD = [note(1, 60, 0), note(0, 52, 29), note(0, 36, 0, drum=True), note(0, 40,
 def test_a_pass_per_instrument(tmp_path, monkeypatch):
     calls = fake_muscriptor(monkeypatch, tmp_path, HEARD)
     notes_json = tmp_path / "notes.json"
-    notes_json.write_text(json.dumps({"version": "single-pass-v1", "notes": []}))  # old: not reused
 
     data = pipeline.transcribe(tmp_path / "mix.wav", notes_json, pipeline.Progress())
-    assert calls == [groups for _, groups, _ in pipeline.TRANSCRIPTION_PASSES]
-    assert data["version"] == pipeline.TRANSCRIPTION_VERSION
-    # Each instrument comes from its own pass only, once; the voice (program 52) from none.
+    assert calls == [groups for _, groups, _ in pipeline.PASSES]
     assert sorted(pipeline.family(n) for n in data["notes"]) == ["bass", "drums", "guitar", "piano"]
     assert sorted(pipeline.write_midis(data, tmp_path)) == ["all", "bass", "drums", "guitar", "piano"]
 
     calls.clear()
     pipeline.transcribe(tmp_path / "mix.wav", notes_json, pipeline.Progress())
-    assert calls == []  # up to date: reused
+    assert calls == []
 
 
 def test_silent_instrument_is_skipped(tmp_path, monkeypatch):
     calls = fake_muscriptor(monkeypatch, tmp_path, HEARD)
     data = pipeline.transcribe(tmp_path / "mix.wav", tmp_path / "notes.json", pipeline.Progress(),
                                skip=lambda name: name == "piano")
-    assert data["skipped"] == ["piano"] and len(calls) == 2
+    assert len(calls) == 2
     midis = pipeline.write_midis(data, tmp_path, silent={"bass"})
     assert sorted(midis) == ["all", "drums", "guitar"]
 
@@ -169,13 +150,15 @@ def test_piano_heard_as_guitar_is_dropped(tmp_path):
 
     sr = 22050
     t = np.arange(sr * 2) / sr
-    a4 = 0.3 * np.sin(2 * np.pi * 440 * t).astype(np.float32)  # A4 (MIDI 69) only in the piano stem
+    a4 = 0.3 * np.sin(2 * np.pi * 440 * t).astype(np.float32)
     sf.write(str(tmp_path / "piano.wav"), a4, sr)
-    sf.write(str(tmp_path / "guitar.wav"), 0.3 * np.sin(2 * np.pi * 196 * t).astype(np.float32), sr)  # G3
+    sf.write(str(tmp_path / "guitar.wav"), 0.3 * np.sin(2 * np.pi * 196 * t).astype(np.float32), sr)
     data = {"notes": [note(0.5, 69, 29), note(0.5, 55, 29), note(0.5, 69, 0)]}
     (tmp_path / "midi").mkdir()
     pipeline.write_midis(data, tmp_path / "midi", tmp_path)
-    from api.tab.evaluate import read_midi_notes
+    assert pitches(tmp_path / "midi" / "guitar.mid") == [55]
+    assert pitches(tmp_path / "midi" / "piano.mid") == [69]
 
-    assert [n.midi for n in read_midi_notes(tmp_path / "midi" / "guitar.mid")] == [55]
-    assert [n.midi for n in read_midi_notes(tmp_path / "midi" / "piano.mid")] == [69]
+
+def pitches(path):
+    return [m.note for t in mido.MidiFile(str(path)).tracks for m in t if m.type == "note_on" and m.velocity]

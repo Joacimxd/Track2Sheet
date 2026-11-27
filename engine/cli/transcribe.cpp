@@ -1,21 +1,5 @@
-// t2s_transcribe: run MuScriptor (the model inside NeuralNote v2) on an audio file and write the
-// notes as JSON. Audio decoding and resampling are done by ffmpeg upstream (the FastAPI service),
-// so the input is raw little-endian float32, 16 kHz, mono (`ffmpeg ... -f f32le -ac 1 -ar 16000`).
-//
-//   t2s_transcribe --model muscriptor-large-f16.gguf --audio song.f32 --out notes.json
-//
-// stderr carries one machine-readable line per event, for the caller to parse:
-//   device <backend> <name>
-//   load <0..1>
-//   progress <0..1>
-//   error <message>
-// Output JSON: {"device": "...", "duration": s, "notes": [{"onset", "offset", "pitch",
-//               "program", "is_drum", "instrument"}, ...]}
-
 #include "muscriptor/muscriptor.hpp"
 
-#include <cstdio>
-#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -38,80 +22,58 @@ std::vector<float> readRawFloat(const std::filesystem::path& path)
     if (!file) {
         return {};
     }
-    const auto bytes = static_cast<std::size_t>(file.tellg());
-    std::vector<float> samples(bytes / sizeof(float));
+    std::vector<float> samples(static_cast<std::size_t>(file.tellg()) / sizeof(float));
     file.seekg(0);
     file.read(reinterpret_cast<char*>(samples.data()), static_cast<std::streamsize>(samples.size() * sizeof(float)));
     return samples;
 }
 
-std::string jsonEscape(std::string_view s)
+bool parseInstruments(std::string_view list, std::vector<msl::InstrumentGroup>& instruments)
 {
-    std::string out;
-    for (char c : s) {
-        if (c == '"' || c == '\\') {
-            out += '\\';
-            out += c;
-        } else if (static_cast<unsigned char>(c) < 0x20) {
-            char buf[8];
-            std::snprintf(buf, sizeof(buf), "\\u%04x", c);
-            out += buf;
-        } else {
-            out += c;
+    while (!list.empty()) {
+        const auto comma = list.find(',');
+        const std::string_view name = list.substr(0, comma);
+        bool found = false;
+        for (const msl::InstrumentGroup group : msl::allInstrumentGroups()) {
+            if (msl::instrumentName(group) == name) {
+                instruments.push_back(group);
+                found = true;
+            }
         }
+        if (!found) {
+            return false;
+        }
+        list = comma == std::string_view::npos ? std::string_view{} : list.substr(comma + 1);
     }
-    return out;
+    return true;
 }
 
-} // namespace
+}
 
 int main(int argc, char** argv)
 {
     std::filesystem::path model, audio, out;
-    bool cpu = false;
     std::vector<msl::InstrumentGroup> instruments;
 
-    for (int i = 1; i < argc; ++i) {
+    for (int i = 1; i + 1 < argc; i += 2) {
         const std::string_view arg = argv[i];
-        auto next = [&]() -> const char* { return i + 1 < argc ? argv[++i] : ""; };
+        const char* value = argv[i + 1];
         if (arg == "--model") {
-            model = next();
+            model = value;
         } else if (arg == "--audio") {
-            audio = next();
+            audio = value;
         } else if (arg == "--out") {
-            out = next();
-        } else if (arg == "--cpu") {
-            cpu = true;
+            out = value;
         } else if (arg == "--instruments") {
-            // Comma-separated group names, e.g. clean_electric_guitar,distorted_electric_guitar
-            std::string_view list = next();
-            while (!list.empty()) {
-                const auto comma = list.find(',');
-                const std::string_view name = list.substr(0, comma);
-                bool found = false;
-                for (const msl::InstrumentGroup g : msl::allInstrumentGroups()) {
-                    if (msl::instrumentName(g) == name) {
-                        instruments.push_back(g);
-                        found = true;
-                    }
-                }
-                if (!found) {
-                    std::string names;
-                    for (const msl::InstrumentGroup g : msl::allInstrumentGroups()) {
-                        names += " " + std::string(msl::instrumentName(g));
-                    }
-                    return fail("unknown instrument '" + std::string(name) + "'. Known:" + names);
-                }
-                list = comma == std::string_view::npos ? std::string_view{} : list.substr(comma + 1);
+            if (!parseInstruments(value, instruments)) {
+                return fail("unknown instrument in " + std::string(value));
             }
         } else {
-            std::cerr << "usage: t2s_transcribe --model f.gguf --audio f.f32 --out notes.json [--cpu]"
-                         " [--instruments name,name...]\n";
-            return 2;
+            return fail("unknown option " + std::string(arg));
         }
     }
     if (model.empty() || audio.empty() || out.empty()) {
-        return fail("missing --model, --audio or --out");
+        return fail("usage: t2s_transcribe --model f.gguf --audio f.f32 --out notes.json [--instruments a,b]");
     }
 
     const std::vector<float> samples = readRawFloat(audio);
@@ -119,26 +81,15 @@ int main(int argc, char** argv)
         return fail("cannot read audio (expected raw float32 16 kHz mono)");
     }
 
-    msl::LoadOptions loadOptions;
-    if (cpu) {
-        loadOptions.device = msl::availableDevices().size() - 1; // CPU is always last
-    }
-    loadOptions.on_progress = [](float p) { std::cerr << "load " << p << std::endl; };
-
-    auto transcriber = msl::Transcriber::load(model, loadOptions);
+    auto transcriber = msl::Transcriber::load(model, msl::LoadOptions{});
     if (!transcriber) {
         return fail(msl::describe(transcriber.error()));
     }
-    const msl::Device& device = transcriber->device();
-    std::cerr << "device " << device.backend << " " << device.name << std::endl;
 
-    // NeuralNote v2 exposes no transcription settings, so the library defaults are used
-    // (all instruments, prelude forcing, lead-in and silence gate on). --instruments restricts the
-    // transcription to those groups (conditioning prefix + every other instrument masked).
     msl::TranscribeOptions options;
     options.instruments = instruments;
-    auto notes = transcriber->transcribe(samples, options, [](const msl::TranscriptionUpdate& u) {
-        std::cerr << "progress " << u.progress << std::endl;
+    auto notes = transcriber->transcribe(samples, options, [](const msl::TranscriptionUpdate& update) {
+        std::cerr << "progress " << update.progress << std::endl;
         return true;
     });
     if (!notes) {
@@ -149,15 +100,13 @@ int main(int argc, char** argv)
     if (!json) {
         return fail("cannot write output file");
     }
-    json << "{\"device\":\"" << jsonEscape(device.backend) << " / " << jsonEscape(device.name) << "\","
-         << "\"duration\":" << static_cast<double>(samples.size()) / msl::Transcriber::SAMPLE_RATE << ",\"notes\":[";
+    json << "{\"notes\":[";
     for (std::size_t i = 0; i < notes->size(); ++i) {
         const msl::Note& n = (*notes)[i];
         json << (i ? "," : "") << "{\"onset\":" << n.onset << ",\"offset\":" << n.offset << ",\"pitch\":" << n.pitch
              << ",\"program\":" << n.program << ",\"is_drum\":" << (n.is_drum ? "true" : "false")
-             << ",\"instrument\":\"" << jsonEscape(msl::instrumentLabel(n.program)) << "\"}";
+             << ",\"instrument\":\"" << msl::instrumentLabel(n.program) << "\"}";
     }
     json << "]}\n";
-    std::cerr << "done " << notes->size() << std::endl;
     return 0;
 }
