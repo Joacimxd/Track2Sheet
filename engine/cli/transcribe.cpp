@@ -69,6 +69,7 @@ int main(int argc, char** argv)
 {
     std::filesystem::path model, audio, out;
     bool cpu = false;
+    std::vector<msl::InstrumentGroup> instruments;
 
     for (int i = 1; i < argc; ++i) {
         const std::string_view arg = argv[i];
@@ -81,8 +82,31 @@ int main(int argc, char** argv)
             out = next();
         } else if (arg == "--cpu") {
             cpu = true;
+        } else if (arg == "--instruments") {
+            // Comma-separated group names, e.g. clean_electric_guitar,distorted_electric_guitar
+            std::string_view list = next();
+            while (!list.empty()) {
+                const auto comma = list.find(',');
+                const std::string_view name = list.substr(0, comma);
+                bool found = false;
+                for (const msl::InstrumentGroup g : msl::allInstrumentGroups()) {
+                    if (msl::instrumentName(g) == name) {
+                        instruments.push_back(g);
+                        found = true;
+                    }
+                }
+                if (!found) {
+                    std::string names;
+                    for (const msl::InstrumentGroup g : msl::allInstrumentGroups()) {
+                        names += " " + std::string(msl::instrumentName(g));
+                    }
+                    return fail("unknown instrument '" + std::string(name) + "'. Known:" + names);
+                }
+                list = comma == std::string_view::npos ? std::string_view{} : list.substr(comma + 1);
+            }
         } else {
-            std::cerr << "usage: t2s_transcribe --model f.gguf --audio f.f32 --out notes.json [--cpu]\n";
+            std::cerr << "usage: t2s_transcribe --model f.gguf --audio f.f32 --out notes.json [--cpu]"
+                         " [--instruments name,name...]\n";
             return 2;
         }
     }
@@ -109,8 +133,10 @@ int main(int argc, char** argv)
     std::cerr << "device " << device.backend << " " << device.name << std::endl;
 
     // NeuralNote v2 exposes no transcription settings, so the library defaults are used
-    // (all instruments, prelude forcing, lead-in and silence gate on).
+    // (all instruments, prelude forcing, lead-in and silence gate on). --instruments restricts the
+    // transcription to those groups (conditioning prefix + every other instrument masked).
     msl::TranscribeOptions options;
+    options.instruments = instruments;
     auto notes = transcriber->transcribe(samples, options, [](const msl::TranscriptionUpdate& u) {
         std::cerr << "progress " << u.progress << std::endl;
         return true;

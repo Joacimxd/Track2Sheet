@@ -28,15 +28,18 @@ cleanup() {
   trap - INT TERM EXIT
   echo
   echo "▸ Stopping…"
+  [ -n "$API_PID" ] && kill "$API_PID" 2>/dev/null
+  [ -n "${WEB_PID:-}" ] && kill "$WEB_PID" 2>/dev/null
   kill 0 2>/dev/null || true
 }
 trap cleanup INT TERM EXIT
 
 API_PID=""
 if lsof -nP -iTCP:"$API_PORT" -sTCP:LISTEN >/dev/null 2>&1; then
-  echo "▸ Port $API_PORT is already in use: assuming the API is already running there."
+  echo "▸ Port $API_PORT is already in use: using the API that is running there (restart it if it is an old version)."
 else
-  .venv/bin/uvicorn api.main:app --host 127.0.0.1 --port "$API_PORT" 2>&1 | sed -u 's/^/[api] /' &
+  # Process substitution (not a pipe) so $! is uvicorn itself, not the `sed` prefixing its output
+  .venv/bin/uvicorn api.main:app --host 127.0.0.1 --port "$API_PORT" > >(sed -u 's/^/[api] /') 2>&1 &
   API_PID=$!
   for _ in $(seq 1 40); do
     curl -s "http://127.0.0.1:$API_PORT/health" >/dev/null && break
@@ -44,7 +47,7 @@ else
   done
 fi
 
-(cd interfaz && VITE_PIPELINE_URL="http://127.0.0.1:$API_PORT" npm run dev) 2>&1 | sed -u 's/^/[web] /' &
+(cd interfaz && VITE_PIPELINE_URL="http://127.0.0.1:$API_PORT" exec npm run dev) > >(sed -u 's/^/[web] /') 2>&1 &
 WEB_PID=$!
 
 echo "▸ API: http://127.0.0.1:$API_PORT   Interface: see the [web] Local: line below   (Ctrl+C to stop)"

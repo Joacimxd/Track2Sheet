@@ -19,5 +19,6 @@ cmake -S cli -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DMUSCRIPTOR_METAL_PRE
 cmake --build build
 
 mkdir -p bin
+rm -f bin/t2s_transcribe   # overwriting a signed binary in place gets it killed by macOS
 cp build/t2s_transcribe bin/
 echo "Built $(pwd)/bin/t2s_transcribe"

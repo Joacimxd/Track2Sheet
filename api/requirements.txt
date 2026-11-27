@@ -9,3 +9,8 @@ soundfile
 soxr
 mido
 audioread              # audio-separator imports it without declaring it
+pytest                 # api/tests
+
+# notebooks/guitar_cleanup.ipynb
+ipykernel
+matplotlib
