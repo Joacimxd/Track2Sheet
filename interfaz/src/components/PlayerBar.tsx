@@ -1,9 +1,10 @@
 import { useRef } from 'react'
-import { ChevronDown, Minus, Pause, Play, Plus, SkipBack } from 'lucide-react'
+import { ChevronDown, LoaderCircle, Minus, Pause, Play, Plus, SkipBack } from 'lucide-react'
 import type { InstrumentId, SongSource } from '../types'
 import { INSTRUMENT_IDS, INSTRUMENT_LABEL, STEM_GEL } from '../types'
 import { formatTime } from '../utils/format'
 import { MAX_RATE, MIN_RATE } from '../utils/audioEngine'
+import type { GuitarPart } from '../utils/tabApi'
 
 const RATE_STEP = 0.05
 
@@ -23,7 +24,19 @@ interface Props {
   onRestart: () => void
   rate: number
   onRate: (rate: number) => void
+  /** Guitar tab state (computed by the API). */
+  tabLoading: boolean
+  pianoLoading: boolean
+  tuningName: string | null
+  hasSolos: boolean
+  guitarPart: GuitarPart
+  onGuitarPart: (part: GuitarPart) => void
 }
+
+const PART_OPTIONS: { id: GuitarPart; label: string; title: string }[] = [
+  { id: 'auto', label: 'Lead', title: 'En los solos se muestra la línea del solo' },
+  { id: 'rhythm', label: 'Rítmica', title: 'En los solos se siguen mostrando los acordes de la rítmica' },
+]
 
 const ORIGIN_LABEL: Record<SongSource['origin'], string> = { demo: 'Demo', server: 'Procesada', local: 'Local', youtube: 'YouTube' }
 
@@ -160,7 +173,7 @@ export function PlayerBar(p: Props) {
                 role="radio"
                 aria-checked={selected}
                 onClick={() => p.onSelectInstrument(id)}
-                title={p.hasMidi[id] ? `Practicar ${INSTRUMENT_LABEL[id].toLowerCase()} (su pista empieza silenciada)` : `${INSTRUMENT_LABEL[id]}: sin .mid cargado`}
+                title={p.hasMidi[id] ? `Practicar ${INSTRUMENT_LABEL[id].toLowerCase()}` : `${INSTRUMENT_LABEL[id]}: sin .mid cargado`}
                 style={selected ? { backgroundColor: STEM_GEL[id] } : undefined}
                 className={`h-8 rounded px-3.5 text-sm font-semibold transition-colors duration-200 ${
                   selected ? 'text-[#111214]' : 'text-ink-2 hover:text-ink'
@@ -172,6 +185,52 @@ export function PlayerBar(p: Props) {
           })}
         </div>
       </div>
+
+      {p.instrument === 'piano' && p.pianoLoading && (
+        <span className="flex items-center gap-1.5 text-sm text-ink-3">
+          <LoaderCircle className="h-4 w-4 animate-spin" /> Limpiando piano…
+        </span>
+      )}
+
+      {/* Guitar tab: what to play in solos, tuning, and the API working */}
+      {p.instrument === 'guitar' && p.hasMidi.guitar && (
+        <div className="flex items-center gap-2">
+          {p.tabLoading && (
+            <span className="flex items-center gap-1.5 text-sm text-ink-3">
+              <LoaderCircle className="h-4 w-4 animate-spin" /> Calculando tab…
+            </span>
+          )}
+          {!p.tabLoading && p.hasSolos && (
+            <>
+              <span className="text-sm font-medium text-ink-3">En solos</span>
+              <div className="flex rounded-md bg-control p-0.5" role="radiogroup" aria-label="Qué tocar en los solos">
+                {PART_OPTIONS.map((o) => {
+                  const selected = o.id === p.guitarPart
+                  return (
+                    <button
+                      key={o.id}
+                      role="radio"
+                      aria-checked={selected}
+                      title={o.title}
+                      onClick={() => p.onGuitarPart(o.id)}
+                      className={`h-8 rounded px-3 text-sm font-semibold transition-colors duration-200 ${
+                        selected ? 'bg-[#2e3037] text-ink' : 'text-ink-2 hover:text-ink'
+                      }`}
+                    >
+                      {o.label}
+                    </button>
+                  )
+                })}
+              </div>
+            </>
+          )}
+          {!p.tabLoading && p.tuningName && p.tuningName !== 'E estándar' && (
+            <span className="rounded-md border border-rule px-2 py-1 text-xs font-semibold text-ink-2" title="Afinación detectada">
+              {p.tuningName}
+            </span>
+          )}
+        </div>
+      )}
     </header>
   )
 }

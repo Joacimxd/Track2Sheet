@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { InstrumentId, LoadedSong, SongSource, StemId } from '../types'
+import type { InstrumentId, LoadedSong, MidiNote, SongSource, StemId } from '../types'
 import { STEM_IDS } from '../types'
 import { AudioEngine } from '../utils/audioEngine'
 import { createDemoSong } from '../utils/demoSong'
-import { midiToDrumLanes, midiToFretboard } from '../utils/midiToFretboard'
+import { EMPTY_TAB, midiToDrumLanes, type FretboardTab } from '../utils/midiToFretboard'
+import { fetchTab, type GuitarPart, type TabResponse } from '../utils/tabApi'
+import { fetchPiano, localPiano, type PianoNote } from '../utils/pianoApi'
 import { processYoutube, type PipelineStep } from '../utils/pipelineApi'
 import { assignFiles, fetchServerSongs, isAudioFile, isMidiFile, loadSong } from '../utils/songLoader'
 
@@ -18,7 +20,7 @@ export interface YoutubeState {
 
 /**
  * Multi-track player: 6 stems on one master clock (the Tone.js transport, read every animation
- * frame), the instrument being practised (its stem starts muted, toggleable), per-stem mute / solo / volume,
+ * frame), the instrument being practised, per-stem mute / solo / volume,
  * song library (demo, `output/`, local files, YouTube) and the .mid → highway mapping.
  */
 export function useMultiTrackPlayer() {
@@ -30,8 +32,8 @@ export function useMultiTrackPlayer() {
   const [loading, setLoading] = useState<string | null>('Preparando demo…')
   const [error, setError] = useState<string | null>(null)
   const [instrument, setInstrument] = useState<InstrumentId>('guitar')
-  // The practised instrument starts muted (you play it), but every track can be toggled freely.
-  const [userMuted, setUserMuted] = useState(() => ({ ...allStems(false), guitar: true }))
+  // Every track sounds until the user mutes it (choosing an instrument doesn't mute it).
+  const [userMuted, setUserMuted] = useState(() => allStems(false))
   const [volume, setVolumeState] = useState(() => allStems(0.85))
   // Per-track solo (DAW style): any number of tracks can be soloed together.
   const [solo, setSolo] = useState(() => allStems(false))
@@ -154,9 +156,6 @@ export function useMultiTrackPlayer() {
 
   const selectInstrument = useCallback((id: InstrumentId) => {
     setInstrument(id)
-    // Switching instrument mutes the new one (you play it) and brings the other back into the mix;
-    // either can still be toggled afterwards.
-    setUserMuted((m) => ({ ...m, guitar: id === 'guitar', drums: id === 'drums' }))
     setSolo(allStems(false))
   }, [])
 
@@ -224,8 +223,52 @@ export function useMultiTrackPlayer() {
     setYoutube({ status: 'idle' })
   }, [])
 
-  const guitarTab = useMemo(() => midiToFretboard(song?.midi.guitar?.notes ?? []), [song])
+  // Guitar tab: computed by the Python API (api/tab/) whenever the song's guitar notes change.
+  // The result remembers which notes it is for, so a stale one is never shown for another song.
+  const guitarNotes = song?.midi.guitar?.notes
+  const [tabResult, setTabResult] = useState<{ notes: MidiNote[]; tab: TabResponse | null } | null>(null)
+  const [guitarPart, setGuitarPart] = useState<GuitarPart>('auto')
+  useEffect(() => {
+    if (!song || !guitarNotes?.length) return
+    const abort = new AbortController()
+    fetchTab(guitarNotes, song.source.id, abort.signal)
+      .then((tab) => setTabResult({ notes: guitarNotes, tab }))
+      .catch((e) => {
+        if (abort.signal.aborted) return
+        setTabResult({ notes: guitarNotes, tab: null })
+        setError(e instanceof Error ? e.message : String(e))
+      })
+    return () => abort.abort()
+  }, [song, guitarNotes])
+  const current = tabResult && tabResult.notes === guitarNotes ? tabResult : null
+  const tabResponse = current?.tab ?? null
+  const tabStatus: 'idle' | 'loading' | 'error' = !guitarNotes?.length ? 'idle' : !current ? 'loading' : current.tab ? 'idle' : 'error'
+  const guitarTab = useMemo<FretboardTab>(() => {
+    if (!tabResponse) return EMPTY_TAB
+    const part = tabResponse.parts[guitarPart]
+    return { notes: part.notes, chords: part.chords, solos: tabResponse.solos, labels: tabResponse.tuning.labels }
+  }, [tabResponse, guitarPart])
   const drumNotes = useMemo(() => midiToDrumLanes(song?.midi.drums?.notes ?? []), [song])
+
+  // Piano: cleaned and split into hands by the Python API (api/piano.py); raw notes split at
+  // middle C while it works or when it can't be reached.
+  const pianoMidi = song?.midi.piano?.notes
+  const [pianoResult, setPianoResult] = useState<{ notes: MidiNote[]; piano: PianoNote[] | null } | null>(null)
+  useEffect(() => {
+    if (!song || !pianoMidi?.length) return
+    const abort = new AbortController()
+    fetchPiano(pianoMidi, song.source.id, abort.signal)
+      .then((res) => setPianoResult({ notes: pianoMidi, piano: res.notes }))
+      .catch((e) => {
+        if (abort.signal.aborted) return
+        setPianoResult({ notes: pianoMidi, piano: null })
+        setError(e instanceof Error ? e.message : String(e))
+      })
+    return () => abort.abort()
+  }, [song, pianoMidi])
+  const pianoCurrent = pianoResult && pianoResult.notes === pianoMidi ? pianoResult : null
+  const pianoLoading = !!pianoMidi?.length && !pianoCurrent
+  const pianoNotes = useMemo(() => pianoCurrent?.piano ?? localPiano(pianoMidi ?? []), [pianoCurrent, pianoMidi])
 
   return {
     songs,
@@ -239,7 +282,16 @@ export function useMultiTrackPlayer() {
     selectInstrument,
     practiceMidi: song?.midi[instrument] ?? null,
     guitarTab,
+    /** 'loading' while the API computes the tab. */
+    tabStatus,
+    tuningName: tabResponse?.tuning.name ?? null,
+    /** In solos: play the lead line ('auto') or keep the rhythm part ('rhythm'). */
+    guitarPart,
+    setGuitarPart,
     drumNotes,
+    pianoNotes,
+    /** true while the API cleans the piano notes. */
+    pianoLoading,
     muted,
     userMuted,
     solo,

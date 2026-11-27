@@ -3,7 +3,7 @@ import type * as Tone from 'tone'
 import { ChevronDown, FileMusic, Headphones, Upload, Volume2, VolumeX } from 'lucide-react'
 import type { YoutubeState } from '../hooks/useMultiTrackPlayer'
 import type { InstrumentId, LoadedSong, StemId } from '../types'
-import { STEM_GEL, STEM_LABEL, STEM_SHORT } from '../types'
+import { isInstrument, STEM_GEL, STEM_LABEL, STEM_SHORT } from '../types'
 import { LevelMeter } from './LevelMeter'
 import { YoutubeUrlBar } from './YoutubeUrlBar'
 
@@ -67,7 +67,7 @@ export function RightPanel(p: Props) {
               key={id}
               id={id}
               stem={p.song?.stems[id]}
-              practiceMidi={id === 'guitar' || id === 'drums' ? p.song?.midi[id]?.fileName : undefined}
+              practiceMidi={isInstrument(id) ? p.song?.midi[id]?.fileName : undefined}
               practising={id === p.instrument}
               muted={p.muted[id]}
               userMuted={p.userMuted[id]}
@@ -108,10 +108,9 @@ function TrackRow(r: RowProps) {
   const [open, setOpen] = useState(false)
   const audioInput = useRef<HTMLInputElement>(null)
   const midiInput = useRef<HTMLInputElement>(null)
-  const isInstrument = r.id === 'guitar' || r.id === 'drums'
+  const practicable = isInstrument(r.id)
   const gel = STEM_GEL[r.id]
   const lit = !r.muted && !!r.stem
-  // The practised track starts muted (you play it) but can be unmuted to play along with it.
   const muteOn = r.userMuted
 
   const btn = 'flex h-8 w-8 shrink-0 items-center justify-center rounded-md transition active:scale-95 disabled:cursor-not-allowed disabled:active:scale-100'
@@ -147,7 +146,7 @@ function TrackRow(r: RowProps) {
           disabled={!r.stem}
           aria-pressed={muteOn}
           aria-label={`Silenciar ${STEM_LABEL[r.id]}`}
-          title={r.userMuted ? (r.practising ? 'Silenciada: la tocas tú · clic para oírla' : 'Activar pista') : 'Silenciar pista'}
+          title={r.userMuted ? 'Activar pista' : 'Silenciar pista'}
           className={`${btn} ${muteOn ? 'bg-alert/20 text-alert' : 'bg-control text-ink-2 hover:bg-[#2e3037] hover:text-ink'}`}
         >
           {muteOn ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
@@ -196,7 +195,7 @@ function TrackRow(r: RowProps) {
           <button onClick={() => audioInput.current?.click()} className="flex h-8 items-center gap-1.5 rounded-md bg-control px-2.5 text-xs font-semibold text-ink-2 transition hover:text-ink">
             <Upload className="h-3.5 w-3.5" /> Audio (.wav/.mp3)
           </button>
-          {isInstrument && (
+          {practicable && (
             <button onClick={() => midiInput.current?.click()} className="flex h-8 items-center gap-1.5 rounded-md bg-control px-2.5 text-xs font-semibold text-ink-2 transition hover:text-ink">
               <FileMusic className="h-3.5 w-3.5" /> Notas (.mid)
             </button>

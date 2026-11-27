@@ -159,6 +159,6 @@ export function createDemoSong(id = 'demo', title = 'Neon Highway'): SongSource 
     origin: id === 'demo' ? 'demo' : 'youtube',
     stems: {},
     synth,
-    midi: { guitar: synth.guitar, drums: synth.drums },
+    midi: { guitar: synth.guitar, drums: synth.drums, piano: synth.piano },
   }
 }

@@ -1,5 +1,5 @@
 import type { FileRef, InstrumentId, LoadedSong, LoadedStem, ParsedMidi, SongSource, StemId } from '../types'
-import { STEM_IDS } from '../types'
+import { isInstrument, STEM_IDS } from '../types'
 import { parseMidi } from './midiParser'
 
 interface ApiFile {
@@ -47,8 +47,6 @@ export function stemFromName(name: string): StemId | null {
   if (/other|otros/.test(n)) return 'other'
   return null
 }
-
-export const isInstrument = (id: StemId | null): id is InstrumentId => id === 'guitar' || id === 'drums'
 
 /**
  * Route user files into a song source. Audio goes to the stem named in the file (or `target`, or

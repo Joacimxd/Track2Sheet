@@ -2,7 +2,7 @@ import { INSTRUMENT_IDS, type SongSource } from '../types'
 import { createDemoSong } from './demoSong'
 
 /**
- * Bridge to the Track2Sheet pipeline (YouTube → 6 stems → .mid of guitar / drums).
+ * Bridge to the Track2Sheet pipeline (YouTube → 6 stems → .mid of guitar / drums / piano).
  *
  * If `VITE_PIPELINE_URL` is set (e.g. http://127.0.0.1:8000, the FastAPI service in api/), the URL
  * is POSTed to `/jobs`, the job is polled at `/jobs/{id}` until it is done, and the stems and .mid
@@ -17,7 +17,7 @@ export interface PipelineStep {
   progress: number
 }
 
-export const PIPELINE_STEPS = ['Descargando audio de YouTube', 'Separando en 6 stems', 'Transcribiendo .mid (guitarra y batería)', 'Preparando pistas']
+export const PIPELINE_STEPS = ['Descargando audio de YouTube', 'Separando en 6 stems', 'Transcribiendo .mid (guitarra, piano y batería)', 'Preparando pistas']
 
 const YT_ID = /(?:youtube\.com\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/|live\/)|youtu\.be\/)([\w-]{11})/
 

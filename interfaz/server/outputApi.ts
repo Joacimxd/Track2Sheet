@@ -5,7 +5,7 @@
 //
 // Expected layout (MIDI files may live next to the stems or in output/midi/<song>/):
 //   output/stems/<song>/{guitar,drums,vocals,bass,piano,other}.wav
-//   output/midi/<song>/{guitar,drums}.mid
+//   output/midi/<song>/{guitar,drums,piano}.mid
 import fs from 'node:fs'
 import path from 'node:path'
 import type { Connect, Plugin } from 'vite'
@@ -23,7 +23,7 @@ const MIME: Record<string, string> = {
 }
 
 type Stem = 'bass' | 'drums' | 'guitar' | 'other' | 'piano' | 'vocals'
-type Instrument = 'guitar' | 'drums'
+type Instrument = 'guitar' | 'drums' | 'piano'
 
 export interface ApiFile {
   name: string
@@ -84,7 +84,7 @@ function scanSongs(root: string): ApiSong[] {
         if (!stem) continue
         if (AUDIO_EXT.has(ext)) {
           song.stems[stem] ??= { name: f, path: rel }
-        } else if (MIDI_EXT.has(ext) && (stem === 'guitar' || stem === 'drums')) {
+        } else if (MIDI_EXT.has(ext) && (stem === 'guitar' || stem === 'drums' || stem === 'piano')) {
           song.midi[stem] ??= { name: f, path: rel }
         }
       }

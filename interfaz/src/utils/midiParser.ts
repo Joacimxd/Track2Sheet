@@ -18,8 +18,7 @@ export function parseMidi(data: ArrayBuffer | Uint8Array, fileName: string, perc
   else if (!percussion && pitched.length) chosen = pitched
 
   const notes: MidiNote[] = chosen
-    .flatMap((t) => t.notes)
-    .map((n) => ({ time: n.time, duration: n.duration, midi: n.midi, velocity: n.velocity }))
+    .flatMap((t) => t.notes.map((n) => ({ time: n.time, duration: n.duration, midi: n.midi, velocity: n.velocity, program: t.instrument.number })))
     .sort((a, b) => a.time - b.time || a.midi - b.midi)
 
   const bpm = header.tempos[0]?.bpm ?? 120

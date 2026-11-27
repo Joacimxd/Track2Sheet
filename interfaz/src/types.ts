@@ -33,14 +33,17 @@ export const STEM_SHORT: Record<StemId, string> = {
 }
 
 /** Instruments the user can practise; each one has its own transcribed .mid. */
-export type InstrumentId = 'guitar' | 'drums'
+export type InstrumentId = 'guitar' | 'drums' | 'piano'
 
-export const INSTRUMENT_IDS: InstrumentId[] = ['guitar', 'drums']
+export const INSTRUMENT_IDS: InstrumentId[] = ['guitar', 'drums', 'piano']
 
 export const INSTRUMENT_LABEL: Record<InstrumentId, string> = {
   guitar: 'Guitarra',
   drums: 'Batería',
+  piano: 'Piano',
 }
+
+export const isInstrument = (id: string | null): id is InstrumentId => (INSTRUMENT_IDS as (string | null)[]).includes(id)
 
 export interface MidiNote {
   /** Onset in seconds. */
@@ -49,6 +52,8 @@ export interface MidiNote {
   duration: number
   midi: number
   velocity: number
+  /** MIDI program of the note's track (which guitar / instrument of the song it comes from). */
+  program?: number
 }
 
 export interface ParsedMidi {

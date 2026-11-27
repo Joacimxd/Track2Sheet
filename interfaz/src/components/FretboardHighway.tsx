@@ -11,11 +11,11 @@ import {
   MAX_FRET,
   STRING_COLORS,
   STRING_KEYS,
-  STRING_NAMES,
   type DrumNote,
   type FretboardTab,
   type FretNote,
 } from '../utils/midiToFretboard'
+import type { PianoNote } from '../utils/pianoApi'
 
 /** Seconds of music visible ahead of the impact line. */
 const LOOK_AHEAD = 2.8
@@ -25,10 +25,25 @@ const DEPTH = 3.6
 const HIT_WINDOW = 0.12
 const MIN_VISIBLE_FRETS = 7
 
+// ───────── piano keyboard geometry (x measured in white keys) ─────────
+const WHITE_OF_PC = [0, 0, 1, 1, 2, 3, 3, 4, 4, 5, 5, 6]
+const BLACK_PC = new Set([1, 3, 6, 8, 10])
+const isBlack = (m: number) => BLACK_PC.has(m % 12)
+/** Index of the white key at (or just below) a MIDI pitch. */
+const whiteIndex = (m: number) => Math.floor(m / 12) * 7 + WHITE_OF_PC[m % 12]
+const PIANO_LO = 21 // A0
+const PIANO_HI = 108 // C8
+/** At least two octaves visible. */
+const MIN_VISIBLE_WHITES = 15
+/** Left hand / right hand. */
+const HAND_COLORS = ['#3f8fd2', '#4fb286'] as const
+const HAND_LABELS = ['Mano izq.', 'Mano der.'] as const
+
 interface Props {
   instrument: InstrumentId
   tab: FretboardTab
   drumNotes: DrumNote[]
+  pianoNotes: PianoNote[]
   midi: ParsedMidi | null
   getTime: () => number
   playing: boolean
@@ -91,7 +106,7 @@ function lowerBound(arr: readonly ({ time: number } | number)[], t: number) {
   return lo
 }
 
-export function FretboardHighway({ instrument, tab, drumNotes, midi, getTime, playing }: Props) {
+export function FretboardHighway({ instrument, tab, drumNotes, pianoNotes, midi, getTime, playing }: Props) {
   const imgRef = useRef<HTMLImageElement>(null)
   const [practice, setPractice] = useState(false)
   const [score, setScore] = useState<Score>(EMPTY_SCORE)
@@ -113,8 +128,8 @@ export function FretboardHighway({ instrument, tab, drumNotes, midi, getTime, pl
 
   const practiceRef = useRef(practice)
   useEffect(() => {
-    practiceRef.current = practice
-  }, [practice])
+    practiceRef.current = practice && instrument !== 'piano'
+  }, [practice, instrument])
 
   const resetScore = () => {
     fx.current.judged.clear()
@@ -129,7 +144,7 @@ export function FretboardHighway({ instrument, tab, drumNotes, midi, getTime, pl
     fx.current.score = EMPTY_SCORE
     fx.current.popups = []
     fx.current.snapCam = true
-  }, [tab, drumNotes, instrument])
+  }, [tab, drumNotes, pianoNotes, instrument])
 
   const judge = (id: number, result: 'hit' | 'miss', points = 0) => {
     const f = fx.current
@@ -148,6 +163,7 @@ export function FretboardHighway({ instrument, tab, drumNotes, midi, getTime, pl
       if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return
       const t = e.target
       if (t instanceof HTMLInputElement || t instanceof HTMLSelectElement || t instanceof HTMLTextAreaElement) return
+      if (instrument === 'piano') return // no keyboard practice for the piano (yet)
       const key = e.key.toUpperCase()
       const idx = instrument === 'guitar' ? STRING_KEYS.indexOf(key) : key === KICK.key ? KICK_LANE : DRUM_LANES.findIndex((l) => l.key === key)
       if (idx < 0) return
@@ -536,7 +552,7 @@ export function FretboardHighway({ instrument, tab, drumNotes, midi, getTime, pl
         ctx.fillStyle = 'rgba(14,15,18,0.75)'
         ctx.fillRect(0, stringY(s) - gap * 0.42, practiceRef.current ? gap * 1.9 : gap * 0.95, gap * 0.84)
         ctx.fillStyle = STRING_COLORS[s]
-        ctx.fillText(practiceRef.current ? `${STRING_NAMES[s]} ${STRING_KEYS[s]}` : STRING_NAMES[s], 12, stringY(s) + 1)
+        ctx.fillText(practiceRef.current ? `${tab.labels[s]} ${STRING_KEYS[s]}` : tab.labels[s], 12, stringY(s) + 1)
       }
 
       // Solo tag: the tab shows the lead line here, not the rhythm part.
@@ -573,6 +589,183 @@ export function FretboardHighway({ instrument, tab, drumNotes, midi, getTime, pl
         const n = notes[id]
         if (n) spark(at(n).x, at(n).y, STRING_COLORS[n.string], 18)
       }
+    } else if (instrument === 'piano') {
+      // ───────────── Piano: notes ride the highway onto a keyboard ─────────────
+      const notes = pianoNotes
+      const hitY = h * 0.72
+      const keysBottom = h * 0.975
+
+      // Camera follows the keys coming up next (whole white keys, two octaves at least).
+      let lo = Infinity
+      let hi = -Infinity
+      for (let i = lowerBound(notes, now - 4); i < notes.length && notes[i].time < now + LOOK_AHEAD * 0.75; i++) {
+        if (notes[i].time + notes[i].duration < now) continue
+        lo = Math.min(lo, notes[i].midi)
+        hi = Math.max(hi, notes[i].midi)
+      }
+      const wLo = whiteIndex(PIANO_LO)
+      const wHi = whiteIndex(PIANO_HI) + 1
+      if (lo === Infinity && f.snapCam) {
+        lo = 48
+        hi = 72
+      }
+      if (lo !== Infinity) {
+        let t0 = whiteIndex(lo) - 1
+        let t1 = whiteIndex(hi) + 2
+        if (t1 - t0 < MIN_VISIBLE_WHITES) {
+          const extra = (MIN_VISIBLE_WHITES - (t1 - t0)) / 2
+          t0 -= extra
+          t1 += extra
+        }
+        if (t0 < wLo) [t0, t1] = [wLo, t1 + (wLo - t0)]
+        if (t1 > wHi) [t0, t1] = [Math.max(wLo, t0 - (t1 - wHi)), wHi]
+        const k = f.snapCam ? 1 : Math.min(1, dt * 1.6)
+        f.snapCam = false
+        f.cam.f0 += (t0 - f.cam.f0) * k
+        f.cam.f1 += (t1 - f.cam.f1) * k
+      }
+      const { f0, f1 } = f.cam
+      const kx = (wi: number) => left + ((wi - f0) / (f1 - f0)) * (right - left)
+      const whiteW = kx(1) - kx(0)
+      const keySpan = (m: number) => {
+        if (!isBlack(m)) return { x0: kx(whiteIndex(m)), x1: kx(whiteIndex(m) + 1) }
+        const c = kx(whiteIndex(m) + 1)
+        return { x0: c - whiteW * 0.3, x1: c + whiteW * 0.3 }
+      }
+      const keyCenter = (m: number) => {
+        const k = keySpan(m)
+        return (k.x0 + k.x1) / 2
+      }
+      const mLo = Math.max(PIANO_LO, Math.floor(f0 / 7) * 12)
+      const mHi = Math.min(PIANO_HI, Math.ceil(f1 / 7) * 12 + 11)
+
+      // Keys sounding right now → hand (for the keyboard) and lanes lit just ahead.
+      const down = new Map<number, number>()
+      const active = new Set<number>()
+      for (let i = lowerBound(notes, now - 8); i < notes.length && notes[i].time < now + 1.4; i++) {
+        const n = notes[i]
+        if (n.time + n.duration < now) continue
+        if (n.time <= now + 0.02) down.set(n.midi, n.hand)
+        active.add(n.midi)
+      }
+
+      // Everything on the highway is clipped to the visible keys.
+      ctx.save()
+      floorQuad(left, right, hitY, 0, 1.05)
+      ctx.clip()
+      floorQuad(left, right, hitY, 0, 1.05)
+      ctx.fillStyle = 'rgba(14,15,18,0.32)'
+      ctx.fill()
+      for (let m = mLo; m <= mHi; m++) {
+        if (!isBlack(m) && !active.has(m)) continue
+        const k = keySpan(m)
+        floorQuad(k.x0, k.x1, hitY, 0, 1.05)
+        if (active.has(m)) {
+          const g = ctx.createLinearGradient(0, hitY, 0, vy + (hitY - vy) / (1 + DEPTH))
+          g.addColorStop(0, 'rgba(242,239,233,0.08)')
+          g.addColorStop(1, 'rgba(242,239,233,0)')
+          ctx.fillStyle = g
+        } else ctx.fillStyle = 'rgba(0,0,0,0.16)'
+        ctx.fill()
+      }
+      // Octave lines at every C, fainter ones at every F.
+      for (let wi = Math.ceil(f0); wi <= Math.floor(f1); wi++) {
+        const pc = wi % 7
+        if (pc !== 0 && pc !== 3) continue
+        const a = proj(kx(wi), hitY, 0)
+        const b = proj(kx(wi), hitY, 1.05)
+        ctx.strokeStyle = pc === 0 ? 'rgba(242,239,233,0.22)' : 'rgba(242,239,233,0.08)'
+        ctx.lineWidth = 1.2
+        line(a.x, a.y, b.x, b.y)
+      }
+      beatLines(left, right, hitY)
+
+      // Notes, far → near: a bar on the floor as long as the note, its onset edge brighter.
+      const start = lowerBound(notes, now - 8)
+      const end = lowerBound(notes, now + LOOK_AHEAD * 1.05)
+      for (let i = end - 1; i >= start; i--) {
+        const n = notes[i]
+        if (n.midi < mLo || n.midi > mHi) continue
+        const d1 = Math.min(1.05, depthOf(n.time + n.duration))
+        if (d1 <= 0) continue
+        const d0 = Math.max(0, depthOf(n.time))
+        const k = keySpan(n.midi)
+        const inset = (k.x1 - k.x0) * 0.1
+        const color = HAND_COLORS[n.hand]
+        const base = isBlack(n.midi) ? shade(color, -0.3) : color
+        const sounding = n.time <= now
+        floorQuad(k.x0 + inset, k.x1 - inset, hitY, d0, Math.max(d0 + 0.004, d1))
+        ctx.fillStyle = sounding ? shade(base, 0.2) : rgba(base, 0.88)
+        ctx.fill()
+        ctx.strokeStyle = shade(base, -0.45)
+        ctx.lineWidth = 1
+        ctx.stroke()
+        const a = proj(k.x0 + inset, hitY, d0)
+        const b = proj(k.x1 - inset, hitY, d0)
+        ctx.strokeStyle = shade(base, 0.45)
+        ctx.lineWidth = Math.max(1.5, 4 * a.p)
+        line(a.x, a.y, b.x, b.y)
+      }
+      ctx.restore()
+
+      // Keyboard under the impact line.
+      const stage = ctx.createLinearGradient(0, hitY, 0, h)
+      stage.addColorStop(0, 'rgba(14,15,18,0.85)')
+      stage.addColorStop(1, 'rgba(14,15,18,0.96)')
+      ctx.fillStyle = stage
+      ctx.fillRect(0, hitY, w, h - hitY)
+      ctx.save()
+      ctx.beginPath()
+      ctx.rect(left, hitY, right - left, h - hitY)
+      ctx.clip()
+      const keyTop = hitY + 3
+      const whiteH = keysBottom - keyTop
+      const labelSize = Math.min(15, whiteW * 0.48)
+      for (let m = mLo; m <= mHi; m++) {
+        if (isBlack(m)) continue
+        const k = keySpan(m)
+        const hand = down.get(m)
+        ctx.fillStyle = hand === undefined ? '#e6e2d8' : shade(HAND_COLORS[hand], 0.15)
+        ctx.beginPath()
+        ctx.roundRect(k.x0 + 1, keyTop, k.x1 - k.x0 - 2, whiteH, [0, 0, 4, 4])
+        ctx.fill()
+        if (m % 12 === 0 && labelSize >= 8) {
+          ctx.fillStyle = hand === undefined ? 'rgba(17,18,20,0.55)' : '#111214'
+          ctx.font = `600 ${labelSize}px "Barlow Condensed", sans-serif`
+          ctx.textAlign = 'center'
+          ctx.textBaseline = 'bottom'
+          ctx.fillText(`C${m / 12 - 1}`, (k.x0 + k.x1) / 2, keysBottom - 4)
+        }
+      }
+      for (let m = mLo; m <= mHi; m++) {
+        if (!isBlack(m)) continue
+        const k = keySpan(m)
+        const hand = down.get(m)
+        ctx.fillStyle = hand === undefined ? '#17181c' : shade(HAND_COLORS[hand], -0.1)
+        ctx.beginPath()
+        ctx.roundRect(k.x0, keyTop, k.x1 - k.x0, whiteH * 0.62, [0, 0, 3, 3])
+        ctx.fill()
+        if (hand === undefined) {
+          ctx.fillStyle = 'rgba(242,239,233,0.1)'
+          ctx.fillRect(k.x0 + (k.x1 - k.x0) * 0.2, keyTop, (k.x1 - k.x0) * 0.6, whiteH * 0.55)
+        }
+      }
+      ctx.restore()
+      // Impact line, glowing above every key that sounds.
+      ctx.strokeStyle = 'rgba(242,239,233,0.85)'
+      ctx.lineWidth = 3
+      line(left, hitY, right, hitY)
+      for (const [m, hand] of down) {
+        if (m < mLo || m > mHi) continue
+        const k = keySpan(m)
+        ctx.strokeStyle = shade(HAND_COLORS[hand], 0.35)
+        ctx.lineWidth = 5
+        line(k.x0 + 1, hitY, k.x1 - 1, hitY)
+      }
+
+      crossed(notes, (n) => {
+        if (n.midi >= mLo && n.midi <= mHi) spark(keyCenter(n.midi), hitY, HAND_COLORS[n.hand], 6)
+      })
     } else {
       // ───────────── Drums: lanes → hit line → drum kit ─────────────
       const notes = drumNotes
@@ -881,24 +1074,36 @@ export function FretboardHighway({ instrument, tab, drumNotes, midi, getTime, pl
   })
 
   const total = score.hits + score.misses
-  const hasNotes = instrument === 'guitar' ? tab.notes.length > 0 : drumNotes.length > 0
+  const hasNotes = instrument === 'guitar' ? tab.notes.length > 0 : instrument === 'piano' ? pianoNotes.length > 0 : drumNotes.length > 0
 
   return (
     <div className="relative min-h-0 flex-1 overflow-hidden bg-stage">
       {/* Squirrel per instrument, dimmed and vignetted into the stage */}
-      <img
-        ref={imgRef}
-        src={`${import.meta.env.BASE_URL}${instrument === 'guitar' ? 'ardilla-guitarra.webp' : 'ardilla-bateria.webp'}`}
-        alt=""
-        draggable={false}
-        className="pointer-events-none absolute top-[1%] left-1/2 h-[98%] max-w-none -translate-x-1/2 origin-bottom select-none"
-        style={{ filter: 'brightness(0.5) saturate(0.8)', opacity: 0.85 }}
-      />
+      {instrument !== 'piano' && (
+        <img
+          ref={imgRef}
+          src={`${import.meta.env.BASE_URL}${instrument === 'guitar' ? 'ardilla-guitarra.webp' : 'ardilla-bateria.webp'}`}
+          alt=""
+          draggable={false}
+          className="pointer-events-none absolute top-[1%] left-1/2 h-[98%] max-w-none -translate-x-1/2 origin-bottom select-none"
+          style={{ filter: 'brightness(0.5) saturate(0.8)', opacity: 0.85 }}
+        />
+      )}
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_50%_45%,transparent_40%,var(--color-stage)_100%)]" />
 
       <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" />
 
-      <div className="absolute top-2 right-3 flex items-center gap-2 text-xs font-semibold">
+      {instrument === 'piano' && hasNotes && (
+        <div className="pointer-events-none absolute top-2 left-3 flex items-center gap-3 rounded-md bg-stage/85 px-2.5 py-1.5 text-xs font-semibold text-ink-2">
+          {HAND_LABELS.map((label, i) => (
+            <span key={label} className="flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: HAND_COLORS[i] }} /> {label}
+            </span>
+          ))}
+        </div>
+      )}
+
+      <div className={`absolute top-2 right-3 flex items-center gap-2 text-xs font-semibold ${instrument === 'piano' ? 'hidden' : ''}`}>
         {practice && (
           <span className="rounded-md bg-stage/85 px-2.5 py-1.5 font-cond text-sm text-ink">
             {score.points} pts · {score.hits}/{total} · racha {score.streak}

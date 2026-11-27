@@ -51,6 +51,7 @@ export default function App() {
   const hasMidi: Record<InstrumentId, boolean> = {
     guitar: !!song?.midi.guitar?.notes.length,
     drums: !!song?.midi.drums?.notes.length,
+    piano: !!song?.midi.piano?.notes.length,
   }
 
   return (
@@ -71,6 +72,12 @@ export default function App() {
         onRestart={player.restart}
         rate={player.rate}
         onRate={player.setRate}
+        tabLoading={player.tabStatus === 'loading'}
+        pianoLoading={player.pianoLoading}
+        tuningName={player.tuningName}
+        hasSolos={player.guitarTab.solos.length > 0}
+        guitarPart={player.guitarPart}
+        onGuitarPart={player.setGuitarPart}
       />
 
       <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(320px,24%)]">
@@ -79,6 +86,7 @@ export default function App() {
             instrument={player.instrument}
             tab={player.guitarTab}
             drumNotes={player.drumNotes}
+            pianoNotes={player.pianoNotes}
             midi={player.practiceMidi}
             getTime={player.getTime}
             playing={player.playing}
