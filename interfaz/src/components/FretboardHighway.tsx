@@ -463,6 +463,13 @@ export function FretboardHighway({ instrument, tab, drumNotes, midi, getTime, pl
         const b = proj(x1 + 4, stringY(c.maxString) + gap * 0.55, d)
         ctx.strokeStyle = `rgba(255,255,255,${0.45 * (1 - d * 0.5)})`
         ctx.strokeRect(a.x, a.y, b.x - a.x, b.y - a.y)
+        if (c.name) {
+          ctx.fillStyle = `rgba(255,255,255,${0.8 * (1 - d * 0.6)})`
+          ctx.font = `600 ${Math.max(10, Math.round(gap * 0.7 * (1 - d * 0.5)))}px "Barlow Condensed", sans-serif`
+          ctx.textAlign = 'center'
+          ctx.textBaseline = 'bottom'
+          ctx.fillText(c.name, (a.x + b.x) / 2, Math.min(a.y, b.y) - 3)
+        }
       }
 
       // Notes, far → near.
@@ -530,6 +537,15 @@ export function FretboardHighway({ instrument, tab, drumNotes, midi, getTime, pl
         ctx.fillRect(0, stringY(s) - gap * 0.42, practiceRef.current ? gap * 1.9 : gap * 0.95, gap * 0.84)
         ctx.fillStyle = STRING_COLORS[s]
         ctx.fillText(practiceRef.current ? `${STRING_NAMES[s]} ${STRING_KEYS[s]}` : STRING_NAMES[s], 12, stringY(s) + 1)
+      }
+
+      // Solo tag: the tab shows the lead line here, not the rhythm part.
+      if (tab.solos.some((s) => s.start <= now && now <= s.end)) {
+        ctx.textAlign = 'right'
+        ctx.textBaseline = 'top'
+        ctx.font = `700 ${Math.max(13, gap * 0.7)}px "Barlow Condensed", sans-serif`
+        ctx.fillStyle = 'rgba(240,180,41,0.9)'
+        ctx.fillText('SOLO', w - 16, 14)
       }
 
       // Fret numbers under the neck.

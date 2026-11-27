@@ -1,15 +1,12 @@
-import type { SongSource } from '../types'
+import { INSTRUMENT_IDS, type SongSource } from '../types'
 import { createDemoSong } from './demoSong'
 
 /**
  * Bridge to the Track2Sheet pipeline (YouTube → 6 stems → .mid of guitar / drums).
  *
- * If `VITE_PIPELINE_URL` is set, the URL is POSTed to `${VITE_PIPELINE_URL}/process` and the
- * backend must answer with:
- *
- *   { "id": "...", "title": "...",
- *     "stems": { "bass": "<url>", "drums": "<url>", "guitar": "<url>", "other": "<url>", "piano": "<url>", "vocals": "<url>" },
- *     "midi":  { "guitar": "<url>", "drums": "<url>" } }
+ * If `VITE_PIPELINE_URL` is set (e.g. http://127.0.0.1:8000, the FastAPI service in api/), the URL
+ * is POSTed to `/jobs`, the job is polled at `/jobs/{id}` until it is done, and the stems and .mid
+ * files are loaded from `/files/...`. Aborting cancels the job on the server.
  *
  * Without it the steps are simulated and the demo song is loaded, so the whole UI can be tested.
  */
@@ -38,32 +35,53 @@ const sleep = (ms: number, signal?: AbortSignal) =>
     })
   })
 
-interface BackendSong {
+/** Job as returned by the FastAPI service (api/main.py). File paths are relative to /files. */
+interface BackendJob {
   id: string
-  title: string
-  stems: Record<string, string>
-  midi: Record<string, string>
+  status: 'queued' | 'running' | 'done' | 'error' | 'cancelled'
+  step: number
+  progress: number
+  error: string | null
+  result: { id: string; title: string; stems: Record<string, string>; midi: Record<string, string> } | null
 }
 
-const nameOf = (url: string, fallback: string) => decodeURIComponent(url.split('/').pop()?.split('?')[0] || fallback)
+const POLL_MS = 1500
+const nameOf = (path: string, fallback: string) => path.split('/').pop() || fallback
 
 async function processWithBackend(base: string, url: string, onStep: (s: PipelineStep) => void, signal?: AbortSignal): Promise<SongSource> {
-  onStep({ label: PIPELINE_STEPS[0], progress: 0.05 })
-  const res = await fetch(`${base.replace(/\/$/, '')}/process`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ url }),
-    signal,
-  })
-  if (!res.ok) throw new Error(`El pipeline respondió ${res.status}`)
-  const song = (await res.json()) as BackendSong
-  onStep({ label: PIPELINE_STEPS[3], progress: 0.95 })
+  const api = base.replace(/\/$/, '')
+  const call = async (path: string, init?: RequestInit) => {
+    const res = await fetch(`${api}${path}`, { ...init, signal })
+    if (!res.ok) throw new Error(`El pipeline respondió ${res.status}: ${(await res.text()).slice(0, 200)}`)
+    return (await res.json()) as BackendJob
+  }
+
+  onStep({ label: PIPELINE_STEPS[0], progress: 0 })
+  let job = await call('/jobs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url }) })
+  // Cancelling in the UI also stops the job on the server (keepalive: the page may be closing)
+  const cancel = () => void fetch(`${api}/jobs/${job.id}`, { method: 'DELETE', keepalive: true }).catch(() => {})
+  signal?.addEventListener('abort', cancel, { once: true })
+  try {
+    while (job.status === 'queued' || job.status === 'running') {
+      onStep({ label: PIPELINE_STEPS[Math.min(job.step, PIPELINE_STEPS.length - 1)], progress: job.progress })
+      await sleep(POLL_MS, signal)
+      job = await call(`/jobs/${job.id}`)
+    }
+  } finally {
+    signal?.removeEventListener('abort', cancel)
+  }
+  if (job.status !== 'done' || !job.result) throw new Error(job.error ?? 'El pipeline se canceló')
+
+  onStep({ label: PIPELINE_STEPS[3], progress: 1 })
+  const song = job.result
+  const file = (path: string) => `${api}/files/${path.split('/').map(encodeURIComponent).join('/')}`
+  const midi = Object.entries(song.midi).filter(([k]) => (INSTRUMENT_IDS as string[]).includes(k))
   return {
     id: `youtube:${song.id}`,
     title: song.title,
     origin: 'youtube',
-    stems: Object.fromEntries(Object.entries(song.stems).map(([k, u]) => [k, { name: nameOf(u, `${k}.wav`), url: u }])),
-    midi: Object.fromEntries(Object.entries(song.midi).map(([k, u]) => [k, { name: nameOf(u, `${k}.mid`), url: u }])),
+    stems: Object.fromEntries(Object.entries(song.stems).map(([k, p]) => [k, { name: nameOf(p, `${k}.wav`), url: file(p) }])),
+    midi: Object.fromEntries(midi.map(([k, p]) => [k, { name: nameOf(p, `${k}.mid`), url: file(p) }])),
   }
 }
 

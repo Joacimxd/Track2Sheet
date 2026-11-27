@@ -1,8 +1,11 @@
 import { useRef } from 'react'
-import { ChevronDown, Pause, Play, SkipBack } from 'lucide-react'
+import { ChevronDown, Minus, Pause, Play, Plus, SkipBack } from 'lucide-react'
 import type { InstrumentId, SongSource } from '../types'
 import { INSTRUMENT_IDS, INSTRUMENT_LABEL, STEM_GEL } from '../types'
 import { formatTime } from '../utils/format'
+import { MAX_RATE, MIN_RATE } from '../utils/audioEngine'
+
+const RATE_STEP = 0.05
 
 interface Props {
   songs: SongSource[]
@@ -18,6 +21,8 @@ interface Props {
   disabled: boolean
   onTogglePlay: () => void
   onRestart: () => void
+  rate: number
+  onRate: (rate: number) => void
 }
 
 const ORIGIN_LABEL: Record<SongSource['origin'], string> = { demo: 'Demo', server: 'Procesada', local: 'Local', youtube: 'YouTube' }
@@ -89,6 +94,41 @@ export function PlayerBar(p: Props) {
           />
         </div>
         <span className="w-12 font-cond text-xl font-semibold text-ink-3">{formatTime(p.duration)}</span>
+      </div>
+
+      {/* Speed: every track, pitch kept */}
+      <div className="flex items-center gap-2">
+        <span className="text-sm font-medium text-ink-3">Velocidad</span>
+        <div className="flex items-center rounded-md bg-control p-0.5" role="group" aria-label="Velocidad de reproducción">
+          <button
+            onClick={() => p.onRate(p.rate - RATE_STEP)}
+            disabled={p.rate <= MIN_RATE + 0.001}
+            aria-label="Más lento"
+            title="Más lento (−5%)"
+            className="flex h-8 w-8 items-center justify-center rounded text-ink-2 transition hover:bg-[#2e3037] hover:text-ink active:scale-95 disabled:opacity-40"
+          >
+            <Minus className="h-4 w-4" />
+          </button>
+          <button
+            onClick={() => p.onRate(1)}
+            aria-label={`Velocidad ${Math.round(p.rate * 100)}%, volver a 100%`}
+            title="Volver a 100%"
+            className={`h-8 w-14 rounded font-cond text-lg font-semibold tabular-nums transition hover:bg-[#2e3037] ${
+              Math.abs(p.rate - 1) < 0.001 ? 'text-ink-2' : 'text-ink'
+            }`}
+          >
+            {Math.round(p.rate * 100)}%
+          </button>
+          <button
+            onClick={() => p.onRate(p.rate + RATE_STEP)}
+            disabled={p.rate >= MAX_RATE - 0.001}
+            aria-label="Más rápido"
+            title="Más rápido (+5%)"
+            className="flex h-8 w-8 items-center justify-center rounded text-ink-2 transition hover:bg-[#2e3037] hover:text-ink active:scale-95 disabled:opacity-40"
+          >
+            <Plus className="h-4 w-4" />
+          </button>
+        </div>
       </div>
 
       {/* Song */}

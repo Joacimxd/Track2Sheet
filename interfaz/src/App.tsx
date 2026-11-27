@@ -69,6 +69,8 @@ export default function App() {
         disabled={!song || !!player.loading}
         onTogglePlay={togglePlay}
         onRestart={player.restart}
+        rate={player.rate}
+        onRate={player.setRate}
       />
 
       <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(320px,24%)]">

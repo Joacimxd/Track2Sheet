@@ -2,3 +2,5 @@ basic-pitch[onnx]
 python-dotenv
 jupyterlab
 matplotlib
+# Mic recorder widget in the notebook (pulls in ipywidgets)
+anywidget

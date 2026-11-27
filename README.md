@@ -47,6 +47,17 @@ Open `http://localhost:8889/?token=<JUPYTER_TOKEN>`; `notebooks/stem2midi.ipynb`
 It transcribes `docs/stems/audio [music].mp3` (the stem that contains the guitar) to
 `output/midi/<song>/guitar.mid` and draws it as a piano roll.
 
+## Pipeline API (native macOS, no Docker)
+
+A FastAPI service in `api/` runs everything from a YouTube link: download, 6-stem separation, and,
+in parallel, transcription of the full mix with **MuScriptor large** (the model inside NeuralNote v2,
+run by its native engine with Metal). The interface calls it when `VITE_PIPELINE_URL` is set.
+Setup and endpoints: [api/README.md](api/README.md).
+
+```bash
+./dev.sh        # API (port 8765) + interface together; first run also builds/installs everything
+```
+
 ## Web interface
 
 ```bash

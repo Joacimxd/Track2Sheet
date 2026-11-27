@@ -37,6 +37,7 @@ export function useMultiTrackPlayer() {
   const [solo, setSolo] = useState(() => allStems(false))
   const [playing, setPlaying] = useState(false)
   const [time, setTime] = useState(0)
+  const [rate, setRateState] = useState(1)
   const [youtube, setYoutube] = useState<YoutubeState>({ status: 'idle' })
   const loadToken = useRef(0)
   const youtubeAbort = useRef<AbortController | null>(null)
@@ -124,6 +125,15 @@ export function useMultiTrackPlayer() {
     engine.pause()
     setPlaying(false)
   }, [engine])
+
+  /** Playback speed for all tracks (0.5–1.5, pitch kept). */
+  const setRate = useCallback(
+    (r: number) => {
+      engine.setRate(r)
+      setRateState(engine.rate)
+    },
+    [engine],
+  )
 
   const togglePlay = useCallback(() => (engine.playing ? pause() : void play()), [engine, play, pause])
 
@@ -238,6 +248,8 @@ export function useMultiTrackPlayer() {
     setVolume,
     toggleSolo,
     playing,
+    rate,
+    setRate,
     time,
     duration,
     getTime: useCallback(() => engine.getTime(), [engine]),
