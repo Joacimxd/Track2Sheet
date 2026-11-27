@@ -1,7 +1,12 @@
 .env
 models/
 output/
+datasets/
 __pycache__/
 *.pyc
 .ipynb_checkpoints/
-datasets/
+.venv/
+engine/muscriptor.cpp/
+engine/build/
+engine/bin/
+.DS_Store
